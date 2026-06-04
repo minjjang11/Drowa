@@ -8,14 +8,24 @@ import { ChatPanel, type ChatMessage } from "./ChatPanel";
 import { Toolbar } from "./Toolbar";
 import { FileTree } from "./FileTree";
 import { ContextEditor } from "./ContextEditor";
+import { DesignSystemPanel } from "./DesignSystemPanel";
 import type {
   AiRole,
+  DesignTokens,
   DeviceMode,
   Overrides,
   Selection,
   Status,
   StyleMap,
 } from "@/lib/types";
+
+/** Replace or append the ## Design System block in context.md so both AIs always see tokens. */
+function syncDesignSection(md: string, tokens: DesignTokens): string {
+  const block = `## Design System\n\n\`\`\`json\n${JSON.stringify(tokens, null, 2)}\n\`\`\``;
+  const re = /## Design System\n\n```json\n[\s\S]*?\n```/;
+  if (re.test(md)) return md.replace(re, block);
+  return `${md.trim()}\n\n${block}\n`;
+}
 
 const OVERRIDES_PATH = "overrides.json";
 
@@ -32,6 +42,7 @@ export function Workspace({
   initialOverrides,
   initialContextMd,
   initialContextUpdatedAt,
+  initialTokens,
   initialDev,
   initialDesign,
 }: {
@@ -41,6 +52,7 @@ export function Workspace({
   initialOverrides: Overrides;
   initialContextMd: string;
   initialContextUpdatedAt: string | null;
+  initialTokens: DesignTokens;
   initialDev: ChatMessage[];
   initialDesign: ChatMessage[];
 }) {
@@ -48,6 +60,9 @@ export function Workspace({
   const [overrides, setOverrides] = useState<Overrides>(initialOverrides);
   const [contextMd, setContextMd] = useState(initialContextMd);
   const [contextUpdatedAt, setContextUpdatedAt] = useState(initialContextUpdatedAt);
+  const [tokens, setTokens] = useState<DesignTokens>(initialTokens);
+  const [designSysOpen, setDesignPanelOpen] = useState(false);
+  const tokenSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [dev, setDev] = useState<ChatMessage[]>(initialDev);
   const [design, setDesign] = useState<ChatMessage[]>(initialDesign);
   const [busy, setBusy] = useState<AiRole | null>(null);
@@ -119,6 +134,14 @@ export function Workspace({
           }
         },
       )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "design_tokens", filter: `project_id=eq.${projectId}` },
+        (payload) => {
+          const row = payload.new as { tokens: DesignTokens };
+          if (row?.tokens) setTokens(row.tokens);
+        },
+      )
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
@@ -163,6 +186,26 @@ export function Workspace({
       .update({ content: next })
       .eq("project_id", projectId);
     flashStatus(error ? "error" : "saved");
+  }
+
+  // Edit tokens locally; debounce persist to design_tokens + sync into context.md.
+  function handleTokensChange(next: DesignTokens) {
+    setTokens(next);
+    if (tokenSaveTimer.current) clearTimeout(tokenSaveTimer.current);
+    tokenSaveTimer.current = setTimeout(async () => {
+      const supabase = createClient();
+      const nextMd = syncDesignSection(contextMd, next);
+      setContextMd(nextMd);
+      setContextUpdatedAt(new Date().toISOString());
+      const [{ error: e1 }, { error: e2 }] = await Promise.all([
+        supabase.from("design_tokens").upsert(
+          { project_id: projectId, tokens: next },
+          { onConflict: "project_id" },
+        ),
+        supabase.from("context_md").update({ content: nextMd }).eq("project_id", projectId),
+      ]);
+      flashStatus(e1 || e2 ? "error" : "saved");
+    }, 600);
   }
 
   function exportCode() {
@@ -228,6 +271,7 @@ export function Workspace({
         onDevice={setDevice}
         onExport={exportCode}
         onDeploy={deploy}
+        onOpenDesign={() => setDesignPanelOpen(true)}
       />
 
       <div className="flex flex-1 overflow-hidden">
@@ -325,6 +369,14 @@ export function Workspace({
         updatedAt={contextUpdatedAt}
         onSave={saveContext}
       />
+
+      {designSysOpen && (
+        <DesignSystemPanel
+          tokens={tokens}
+          onChange={handleTokensChange}
+          onClose={() => setDesignPanelOpen(false)}
+        />
+      )}
     </div>
   );
 }

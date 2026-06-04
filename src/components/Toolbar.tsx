@@ -26,6 +26,7 @@ export function Toolbar({
   onDevice,
   onExport,
   onDeploy,
+  onOpenDesign,
 }: {
   projectId: string;
   projectName: string;
@@ -34,6 +35,7 @@ export function Toolbar({
   onDevice: (d: DeviceMode) => void;
   onExport: () => void;
   onDeploy: () => void;
+  onOpenDesign: () => void;
 }) {
   const [name, setName] = useState(projectName);
   const meta = STATUS_META[status];
@@ -84,8 +86,15 @@ export function Toolbar({
         ))}
       </div>
 
-      {/* Right: status + export + deploy */}
+      {/* Right: design system + status + export + deploy */}
       <div className="flex items-center gap-2">
+        <button
+          onClick={onOpenDesign}
+          title="Design System"
+          className="glow-hover flex h-7 w-7 items-center justify-center rounded-[4px] border border-border bg-background text-sm text-accent transition-colors hover:border-accent"
+        >
+          ◈
+        </button>
         <div className="flex items-center gap-1.5 rounded-[4px] border border-border bg-background px-2 py-1 font-mono text-[11px] text-muted">
           <span
             className={`h-1.5 w-1.5 rounded-full ${meta.dot} ${meta.spin ? "amber-pulse" : ""}`}

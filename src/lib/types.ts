@@ -59,6 +59,71 @@ export interface Selection {
   styles: StyleMap;
 }
 
+// ─── Design system (Phase 3-1) ───────────────────────────────────
+export interface DesignTokens {
+  colors: {
+    background: string;
+    surface: string;
+    surfaceElevated: string;
+    border: string;
+    accentPrimary: string;
+    accentSecondary: string;
+    textPrimary: string;
+    textSecondary: string;
+    error: string;
+    success: string;
+  };
+  typography: {
+    fontDisplay: string;
+    fontUI: string;
+    fontMono: string;
+    scaleBase: string;
+    scaleRatio: string;
+  };
+  spacing: {
+    unit: string;
+    scale: number[];
+  };
+  radius: {
+    sm: string;
+    md: string;
+    lg: string;
+    full: string;
+  };
+}
+
+export const DEFAULT_TOKENS: DesignTokens = {
+  colors: {
+    background: "#0d0d0d",
+    surface: "#141414",
+    surfaceElevated: "#1a1a1a",
+    border: "#2a2a2a",
+    accentPrimary: "#f59e0b",
+    accentSecondary: "#ec4899",
+    textPrimary: "#f5f5f0",
+    textSecondary: "#888880",
+    error: "#ef4444",
+    success: "#22c55e",
+  },
+  typography: {
+    fontDisplay: "Playfair Display",
+    fontUI: "Geist Sans",
+    fontMono: "Geist Mono",
+    scaleBase: "16px",
+    scaleRatio: "1.25",
+  },
+  spacing: {
+    unit: "4px",
+    scale: [4, 8, 12, 16, 24, 32, 48, 64],
+  },
+  radius: {
+    sm: "4px",
+    md: "8px",
+    lg: "12px",
+    full: "9999px",
+  },
+};
+
 /** Preview device frame. */
 export type DeviceMode = "desktop" | "tablet" | "mobile";
 

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { claude, MODEL, buildRequest, extractCode } from "@/lib/claude";
-import type { AiRole, FileRow, Message } from "@/lib/types";
+import { DEFAULT_TOKENS } from "@/lib/types";
+import type { AiRole, DesignTokens, FileRow, Message } from "@/lib/types";
 
 const PREVIEW_PATH = "App.tsx";
 const RECENT_LIMIT = 6;
@@ -28,7 +29,7 @@ export async function POST(req: Request) {
   }
 
   // RLS scopes all reads/writes below to project members only.
-  const [{ data: contextRow }, { data: fileRow }, { data: recent }] =
+  const [{ data: contextRow }, { data: fileRow }, { data: tokenRow }, { data: recent }] =
     await Promise.all([
       supabase.from("context_md").select("content").eq("project_id", projectId).single(),
       supabase
@@ -37,6 +38,7 @@ export async function POST(req: Request) {
         .eq("project_id", projectId)
         .eq("path", PREVIEW_PATH)
         .maybeSingle(),
+      supabase.from("design_tokens").select("tokens").eq("project_id", projectId).maybeSingle(),
       supabase
         .from("messages")
         .select("*")
@@ -45,6 +47,8 @@ export async function POST(req: Request) {
         .order("created_at", { ascending: false })
         .limit(RECENT_LIMIT),
     ]);
+
+  const tokens = (tokenRow as { tokens: DesignTokens } | null)?.tokens ?? DEFAULT_TOKENS;
 
   const file = fileRow as FileRow | null;
   const recentMessages = ((recent as Message[] | null) ?? [])
@@ -56,6 +60,7 @@ export async function POST(req: Request) {
 
   const { system, messages } = buildRequest({
     role,
+    tokens,
     contextMd: contextRow?.content ?? "",
     currentFile: file ? { path: file.path, content: file.content } : null,
     recentMessages,

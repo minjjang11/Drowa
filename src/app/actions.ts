@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { DEFAULT_TOKENS } from "@/lib/types";
 
 const STARTER_APP = `export default function App() {
   return (
@@ -40,6 +41,12 @@ export async function createProject(formData: FormData) {
     project_id: project.id,
     path: "App.tsx",
     content: STARTER_APP,
+  });
+
+  // Seed the design system with defaults (Phase 3-1).
+  await supabase.from("design_tokens").insert({
+    project_id: project.id,
+    tokens: DEFAULT_TOKENS,
   });
 
   revalidatePath("/");

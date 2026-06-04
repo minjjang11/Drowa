@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { AiRole } from "./types";
+import type { AiRole, DesignTokens } from "./types";
 
 export const claude = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -30,8 +30,27 @@ OUTPUT CONTRACT — follow exactly:
 If the request is a question (not a change), answer briefly with no code block.`;
 }
 
+/** Design-system contract — forces consistent, premium output regardless of prompt quality. */
+function designSystemPrompt(tokens: DesignTokens): string {
+  return `You are a UI code generator for the Drowa platform.
+Always generate React + Tailwind code.
+Always follow this project's design system:
+
+${JSON.stringify(tokens, null, 2)}
+
+Rules:
+- Use only the colors defined in the design system above (use the hex values via Tailwind arbitrary classes, e.g. bg-[${tokens.colors.surface}], text-[${tokens.colors.textPrimary}]).
+- Use "${tokens.typography.fontDisplay}" for headings, "${tokens.typography.fontUI}" for body, "${tokens.typography.fontMono}" for code.
+- Spacing must follow the ${tokens.spacing.unit} scale: [${tokens.spacing.scale.join(", ")}] (in px).
+- Border radius: sm ${tokens.radius.sm}, md ${tokens.radius.md}, lg ${tokens.radius.lg}, full ${tokens.radius.full}.
+- Never use blue or indigo as accent unless defined in tokens.
+- Output must look premium, not generic.
+- When the user says vague things like 'Instagram feel' or 'minimal' or 'premium', interpret them as design intent and apply the closest matching current UI trend (bento grid, glassmorphism, layered cards, editorial, etc.) — still within the design system.`;
+}
+
 export interface BuildContextParams {
   role: AiRole;
+  tokens: DesignTokens;
   contextMd: string;
   currentFile: { path: string; content: string } | null;
   /** Most recent turns, oldest-first. Caller slices to the last N (e.g. 6). */
@@ -49,9 +68,10 @@ type Anthropic_MessageParam = Anthropic.MessageParam;
  *   + user prompt                 → volatile
  */
 export function buildRequest(p: BuildContextParams) {
-  // System = frozen prompt (cached) then context.md (cached). Both stable within a session.
+  // System = frozen prompt + design system (cached) then context.md (cached).
   const system: Anthropic.TextBlockParam[] = [
     { type: "text", text: systemPrompt(p.role) },
+    { type: "text", text: designSystemPrompt(p.tokens) },
     {
       type: "text",
       text: `# Project context (context.md)\n\n${p.contextMd || "(empty — this is a new project)"}`,

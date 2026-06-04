@@ -173,3 +173,25 @@ create trigger trg_add_owner after insert on projects
 alter publication supabase_realtime add table files;
 alter publication supabase_realtime add table messages;
 alter publication supabase_realtime add table context_md;
+
+-- ─────────────────────────────────────────────────────────────
+-- Phase 3-1: Design System tokens
+-- ─────────────────────────────────────────────────────────────
+
+create table if not exists design_tokens (
+  project_id  uuid primary key references projects(id) on delete cascade,
+  tokens      jsonb not null default '{}'::jsonb,
+  updated_at  timestamptz not null default now()
+);
+
+drop trigger if exists trg_tokens_updated on design_tokens;
+create trigger trg_tokens_updated before update on design_tokens
+  for each row execute function set_updated_at();
+
+alter table design_tokens enable row level security;
+
+drop policy if exists tokens_all on design_tokens;
+create policy tokens_all on design_tokens for all
+  using (is_project_member(project_id)) with check (is_project_member(project_id));
+
+alter publication supabase_realtime add table design_tokens;
