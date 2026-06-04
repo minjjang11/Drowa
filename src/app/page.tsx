@@ -1,8 +1,15 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { createProject, signOut } from "./actions";
-import type { Project } from "@/lib/types";
+import { signOut } from "./actions";
+import { NewProjectButton } from "@/components/NewProjectButton";
+import type { MemberRole, Project } from "@/lib/types";
+
+const HINTS = [
+  { icon: "⚡", title: "AI Generate", desc: "Prompt to UI in seconds" },
+  { icon: "🎨", title: "Visual Edit", desc: "Click to edit anything" },
+  { icon: "👥", title: "Collaborate", desc: "Dev + Designer, one screen" },
+];
 
 export default async function HomePage() {
   const supabase = await createClient();
@@ -11,54 +18,95 @@ export default async function HomePage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const { data: projects } = await supabase
-    .from("projects")
-    .select("*")
-    .order("updated_at", { ascending: false });
+  const [{ data: projects }, { data: members }] = await Promise.all([
+    supabase.from("projects").select("*").order("updated_at", { ascending: false }),
+    supabase.from("project_members").select("project_id, role").eq("user_id", user.id),
+  ]);
+
+  const roleByProject = new Map<string, MemberRole>(
+    ((members as { project_id: string; role: MemberRole }[] | null) ?? []).map((m) => [
+      m.project_id,
+      m.role,
+    ]),
+  );
+  const list = (projects as Project[] | null) ?? [];
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-12">
-      <header className="mb-10 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Drowa</h1>
-          <p className="font-mono text-xs text-muted">{user.email}</p>
+    <div className="min-h-screen">
+      <header className="flex items-center justify-between border-b border-border bg-surface px-6 py-3">
+        <span className="font-mono text-sm font-semibold">drowa</span>
+        <div className="flex items-center gap-3">
+          <span className="font-mono text-[11px] text-muted">{user.email}</span>
+          <form action={signOut}>
+            <button className="rounded-[4px] border border-border bg-surface px-3 py-1.5 font-mono text-xs text-muted transition-colors duration-150 hover:text-foreground">
+              Sign out
+            </button>
+          </form>
         </div>
-        <form action={signOut}>
-          <button className="rounded-[4px] border border-border bg-surface px-3 py-1.5 font-mono text-xs text-muted transition-colors duration-150 hover:text-foreground">
-            Sign out
-          </button>
-        </form>
       </header>
 
-      <form action={createProject} className="mb-8 flex gap-2">
-        <input
-          name="name"
-          required
-          placeholder="New project name"
-          className="flex-1 rounded-[4px] border border-border bg-surface px-3 py-2 text-sm outline-none transition-colors duration-150 placeholder:text-muted focus:border-accent"
-        />
-        <button className="rounded-[4px] bg-accent px-4 py-2 text-sm font-medium text-white transition-opacity duration-150 hover:opacity-90">
-          Create
-        </button>
-      </form>
-
-      <div className="grid gap-2">
-        {(projects as Project[] | null)?.map((p) => (
-          <Link
-            key={p.id}
-            href={`/project/${p.id}`}
-            className="rounded-[4px] border border-border bg-surface px-4 py-3 transition-colors duration-150 hover:border-accent"
-          >
-            <div className="text-sm font-medium">{p.name}</div>
-            <div className="font-mono text-[11px] text-muted">
-              updated {new Date(p.updated_at).toLocaleString()}
-            </div>
-          </Link>
-        ))}
-        {projects?.length === 0 && (
-          <p className="font-mono text-xs text-muted">No projects yet. Create one above.</p>
-        )}
-      </div>
+      {list.length === 0 ? (
+        <EmptyState />
+      ) : (
+        <main className="mx-auto max-w-5xl px-6 py-10">
+          <div className="mb-6 flex items-center justify-between">
+            <h1 className="text-lg font-semibold">My Projects</h1>
+            <NewProjectButton variant="button" />
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {list.map((p) => (
+              <ProjectCard key={p.id} project={p} role={roleByProject.get(p.id) ?? "developer"} />
+            ))}
+          </div>
+        </main>
+      )}
     </div>
+  );
+}
+
+function ProjectCard({ project, role }: { project: Project; role: MemberRole }) {
+  const tag = role === "designer" ? "DESIGN" : "DEV";
+  return (
+    <Link
+      href={`/project/${project.id}`}
+      className="group flex flex-col gap-3 rounded-[8px] border border-border bg-surface p-4 transition-all duration-150 hover:-translate-y-0.5 hover:border-accent"
+    >
+      <div className="flex items-start justify-between">
+        <span className="text-sm font-semibold">{project.name}</span>
+        <span className="font-mono text-[9px] font-semibold tracking-wider text-accent">
+          [{tag}]
+        </span>
+      </div>
+      <span className="font-mono text-[11px] text-muted">
+        {new Date(project.updated_at).toLocaleDateString(undefined, {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        })}
+      </span>
+    </Link>
+  );
+}
+
+function EmptyState() {
+  return (
+    <main className="flex flex-col items-center justify-center gap-8 px-6 py-24">
+      <div className="text-center">
+        <h1 className="text-3xl font-bold tracking-tight">Drowa</h1>
+        <p className="mt-1 font-mono text-sm text-muted">Build together. Ship faster.</p>
+      </div>
+
+      <NewProjectButton variant="card" />
+
+      <div className="flex flex-wrap items-start justify-center gap-x-10 gap-y-4">
+        {HINTS.map((h) => (
+          <div key={h.title} className="flex max-w-[160px] flex-col items-center gap-1 text-center">
+            <span className="text-lg">{h.icon}</span>
+            <span className="font-mono text-[12px] font-medium text-foreground">{h.title}</span>
+            <span className="font-mono text-[11px] leading-snug text-muted">{h.desc}</span>
+          </div>
+        ))}
+      </div>
+    </main>
   );
 }
