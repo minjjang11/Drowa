@@ -58,3 +58,9 @@ export interface Selection {
   tag: string;
   styles: StyleMap;
 }
+
+/** Preview device frame. */
+export type DeviceMode = "desktop" | "tablet" | "mobile";
+
+/** Workspace save/generation status, drives the toolbar status pill. */
+export type Status = "ready" | "generating" | "saved" | "error";
