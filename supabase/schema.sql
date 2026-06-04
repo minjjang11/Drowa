@@ -222,3 +222,29 @@ create policy templates_select on templates for select
 drop policy if exists templates_write on templates;
 create policy templates_write on templates for all
   using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+
+-- ─────────────────────────────────────────────────────────────
+-- Phase 3-3: Inspiration library (curated patterns live in code)
+-- ─────────────────────────────────────────────────────────────
+
+create table if not exists inspirations (
+  id           uuid primary key default gen_random_uuid(),
+  owner_id     uuid references auth.users(id) on delete cascade,
+  title        text not null,
+  image_url    text,
+  tags         jsonb not null default '[]'::jsonb,
+  pattern_type text not null,
+  is_curated   boolean not null default false,
+  created_at   timestamptz not null default now()
+);
+
+create index if not exists idx_inspirations_owner on inspirations(owner_id);
+
+alter table inspirations enable row level security;
+
+drop policy if exists inspirations_select on inspirations;
+create policy inspirations_select on inspirations for select
+  using (is_curated = true or owner_id = auth.uid());
+drop policy if exists inspirations_write on inspirations;
+create policy inspirations_write on inspirations for all
+  using (owner_id = auth.uid()) with check (owner_id = auth.uid());

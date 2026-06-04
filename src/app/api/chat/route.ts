@@ -16,16 +16,23 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: { projectId?: string; role?: AiRole; prompt?: string };
+  let body: { projectId?: string; role?: AiRole; prompt?: string; image?: string };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { projectId, role, prompt } = body;
+  const { projectId, role, prompt, image } = body;
   if (!projectId || !prompt || (role !== "dev_ai" && role !== "design_ai")) {
     return NextResponse.json({ error: "Missing or invalid fields" }, { status: 400 });
+  }
+
+  // Parse an optional reference image data URL ("data:image/png;base64,...").
+  let imagePayload: { mediaType: string; data: string } | null = null;
+  if (image) {
+    const m = /^data:(image\/(?:png|jpeg|jpg|webp|gif));base64,(.+)$/.exec(image);
+    if (m) imagePayload = { mediaType: m[1] === "image/jpg" ? "image/jpeg" : m[1], data: m[2] };
   }
 
   // RLS scopes all reads/writes below to project members only.
@@ -65,6 +72,7 @@ export async function POST(req: Request) {
     currentFile: file ? { path: file.path, content: file.content } : null,
     recentMessages,
     userPrompt: prompt,
+    image: imagePayload,
   });
 
   let reply: string;

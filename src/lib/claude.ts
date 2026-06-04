@@ -56,6 +56,8 @@ export interface BuildContextParams {
   /** Most recent turns, oldest-first. Caller slices to the last N (e.g. 6). */
   recentMessages: { sender: "user" | "ai"; content: string }[];
   userPrompt: string;
+  /** Optional reference image for "Match this style". */
+  image?: { mediaType: string; data: string } | null;
 }
 
 type Anthropic_MessageParam = Anthropic.MessageParam;
@@ -107,8 +109,25 @@ export function buildRequest(p: BuildContextParams) {
     });
   }
 
-  // The new user prompt — always last, never cached.
-  messages.push({ role: "user", content: p.userPrompt });
+  // The new user prompt — always last, never cached. Attach a reference image if present.
+  if (p.image) {
+    messages.push({
+      role: "user",
+      content: [
+        {
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: p.image.mediaType as "image/png" | "image/jpeg" | "image/webp" | "image/gif",
+            data: p.image.data,
+          },
+        },
+        { type: "text", text: p.userPrompt },
+      ],
+    });
+  } else {
+    messages.push({ role: "user", content: p.userPrompt });
+  }
 
   return { system, messages };
 }

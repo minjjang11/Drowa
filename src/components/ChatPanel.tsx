@@ -16,6 +16,7 @@ export function ChatPanel({
   onSend,
   suggestions,
   onSuggestion,
+  prefill,
 }: {
   role: AiRole;
   title: string;
@@ -24,9 +25,20 @@ export function ChatPanel({
   onSend: (prompt: string) => void;
   suggestions?: string[];
   onSuggestion?: (s: string) => void;
+  /** Programmatic input fill (Apply Style). Bump `n` to re-apply the same text. */
+  prefill?: { text: string; n: number };
 }) {
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (prefill && prefill.text) {
+      setInput(prefill.text);
+      textareaRef.current?.focus();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefill?.n]);
 
   const tag = role === "dev_ai" ? "DEV" : "DESIGN";
   const tagColor = role === "dev_ai" ? "text-accent" : "text-accent-2";
@@ -112,6 +124,7 @@ export function ChatPanel({
 
       <form onSubmit={submit} className="shrink-0 border-t border-border p-2">
         <textarea
+          ref={textareaRef}
           rows={2}
           value={input}
           disabled={busy}

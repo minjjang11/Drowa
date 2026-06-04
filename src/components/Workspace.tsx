@@ -10,12 +10,18 @@ import { FileTree } from "./FileTree";
 import { ContextEditor } from "./ContextEditor";
 import { DesignSystemPanel } from "./DesignSystemPanel";
 import { TemplateLibrary } from "./TemplateLibrary";
+import { InspirationLibrary } from "./InspirationLibrary";
 import {
   insertTemplate,
   toTemplateCode,
   REFINE_PROMPTS,
   type Template,
 } from "@/lib/templates";
+import {
+  buildApplyPrompt,
+  MATCH_STYLE_PROMPT,
+  type Inspiration,
+} from "@/lib/inspirations";
 import type {
   AiRole,
   DesignTokens,
@@ -70,7 +76,9 @@ export function Workspace({
   const [tokens, setTokens] = useState<DesignTokens>(initialTokens);
   const [designSysOpen, setDesignPanelOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [inspOpen, setInspOpen] = useState(false);
   const [refineHints, setRefineHints] = useState<string[] | null>(null);
+  const [designPrefill, setDesignPrefill] = useState<{ text: string; n: number }>({ text: "", n: 0 });
   const tokenSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [dev, setDev] = useState<ChatMessage[]>(initialDev);
   const [design, setDesign] = useState<ChatMessage[]>(initialDesign);
@@ -276,9 +284,21 @@ export function Workspace({
     alert("One-click deploy lands in Phase 3 (Vercel API). For now: Export → push to your own repo.");
   }
 
-  async function send(role: AiRole, prompt: string) {
+  function applyStyle(insp: Inspiration) {
+    setInspOpen(false);
+    setDesignPrefill((p) => ({ text: buildApplyPrompt(insp), n: p.n + 1 }));
+    setDesignOpen(true);
+  }
+
+  function matchStyle(dataUrl: string) {
+    setInspOpen(false);
+    setDesignOpen(true);
+    send("design_ai", MATCH_STYLE_PROMPT, dataUrl);
+  }
+
+  async function send(role: AiRole, prompt: string, image?: string) {
     const append = role === "dev_ai" ? setDev : setDesign;
-    append((prev) => [...prev, { sender: "user", content: prompt }]);
+    append((prev) => [...prev, { sender: "user", content: image ? `🖼️ ${prompt}` : prompt }]);
     setBusy(role);
     setStatus("generating");
     setRefineHints(null);
@@ -286,7 +306,7 @@ export function Workspace({
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, role, prompt }),
+        body: JSON.stringify({ projectId, role, prompt, image }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -328,6 +348,7 @@ export function Workspace({
         onDeploy={deploy}
         onOpenDesign={() => setDesignPanelOpen(true)}
         onOpenTemplates={() => setTemplatesOpen(true)}
+        onOpenInspiration={() => setInspOpen(true)}
       />
 
       <div className="flex flex-1 overflow-hidden">
@@ -415,6 +436,7 @@ export function Workspace({
                 onSend={(p) => send("design_ai", p)}
                 suggestions={refineHints ?? undefined}
                 onSuggestion={(s) => send("design_ai", s)}
+                prefill={designPrefill}
               />
             </div>
             <CollapseTab side="right" onClick={() => setDesignOpen(false)} />
@@ -442,6 +464,14 @@ export function Workspace({
         <TemplateLibrary
           onInsert={handleInsertTemplate}
           onClose={() => setTemplatesOpen(false)}
+        />
+      )}
+
+      {inspOpen && (
+        <InspirationLibrary
+          onApply={applyStyle}
+          onMatchStyle={matchStyle}
+          onClose={() => setInspOpen(false)}
         />
       )}
     </div>
