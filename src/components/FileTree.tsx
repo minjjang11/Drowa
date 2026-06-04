@@ -4,11 +4,37 @@ import { useState } from "react";
 
 /**
  * Replit-style collapsible file rail. Phase 2 renders the single preview file;
- * structure is here so Phase 3 (multi-file) can drop in without layout churn.
+ * right-click → "Save as template" (Phase 3-2).
  */
-export function FileTree() {
+export function FileTree({ onSaveTemplate }: { onSaveTemplate: () => void }) {
   const [open, setOpen] = useState(false);
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const files = ["App.tsx"];
+
+  function openMenu(e: React.MouseEvent) {
+    e.preventDefault();
+    setMenu({ x: e.clientX, y: e.clientY });
+  }
+
+  const contextMenu = menu && (
+    <>
+      <div className="fixed inset-0 z-40" onClick={() => setMenu(null)} />
+      <div
+        className="grad-border fixed z-50 rounded-[6px] bg-surface py-1 shadow-[0_4px_16px_rgba(0,0,0,0.5)]"
+        style={{ left: menu.x, top: menu.y }}
+      >
+        <button
+          onClick={() => {
+            setMenu(null);
+            onSaveTemplate();
+          }}
+          className="block w-full px-3 py-1.5 text-left font-mono text-[11px] text-foreground hover:bg-surface-elevated hover:text-accent"
+        >
+          Save as template
+        </button>
+      </div>
+    </>
+  );
 
   if (!open) {
     return (
@@ -40,13 +66,18 @@ export function FileTree() {
         {files.map((f) => (
           <div
             key={f}
-            className="flex items-center gap-1.5 rounded-[3px] bg-background px-2 py-1.5 font-mono text-[12px] text-foreground"
+            onContextMenu={openMenu}
+            className="flex cursor-default items-center gap-1.5 rounded-[3px] bg-background px-2 py-1.5 font-mono text-[12px] text-foreground"
           >
             <span className="text-muted">›</span>
             {f}
           </div>
         ))}
+        <p className="px-2 pt-2 font-mono text-[9px] leading-snug text-muted">
+          right-click → save as template
+        </p>
       </div>
+      {contextMenu}
     </div>
   );
 }

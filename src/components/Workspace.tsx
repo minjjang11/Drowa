@@ -9,6 +9,13 @@ import { Toolbar } from "./Toolbar";
 import { FileTree } from "./FileTree";
 import { ContextEditor } from "./ContextEditor";
 import { DesignSystemPanel } from "./DesignSystemPanel";
+import { TemplateLibrary } from "./TemplateLibrary";
+import {
+  insertTemplate,
+  toTemplateCode,
+  REFINE_PROMPTS,
+  type Template,
+} from "@/lib/templates";
 import type {
   AiRole,
   DesignTokens,
@@ -62,6 +69,8 @@ export function Workspace({
   const [contextUpdatedAt, setContextUpdatedAt] = useState(initialContextUpdatedAt);
   const [tokens, setTokens] = useState<DesignTokens>(initialTokens);
   const [designSysOpen, setDesignPanelOpen] = useState(false);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [refineHints, setRefineHints] = useState<string[] | null>(null);
   const tokenSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [dev, setDev] = useState<ChatMessage[]>(initialDev);
   const [design, setDesign] = useState<ChatMessage[]>(initialDesign);
@@ -208,6 +217,51 @@ export function Workspace({
     }, 600);
   }
 
+  // Insert a template: compose into the file, persist, log to context.md, offer refine prompts.
+  async function handleInsertTemplate(t: Template) {
+    const next = insertTemplate(code, t.code);
+    setCode(next);
+    setTemplatesOpen(false);
+    setRefineHints(REFINE_PROMPTS);
+    setStatus("generating");
+
+    const supabase = createClient();
+    const stamp = new Date().toISOString();
+    const nextMd = `${contextMd.trim()}\n\n## ${stamp} — Template inserted: ${t.name}`;
+    setContextMd(nextMd);
+    setContextUpdatedAt(stamp);
+    const [{ error: e1 }, { error: e2 }] = await Promise.all([
+      supabase.from("files").upsert(
+        { project_id: projectId, path: "App.tsx", content: next },
+        { onConflict: "project_id,path" },
+      ),
+      supabase.from("context_md").update({ content: nextMd }).eq("project_id", projectId),
+    ]);
+    flashStatus(e1 || e2 ? "error" : "saved");
+  }
+
+  // Save the current file as a reusable custom template.
+  async function handleSaveTemplate() {
+    const name = window.prompt("Template name?");
+    if (!name) return;
+    const category =
+      window.prompt("Category? (hero / cards / pricing / forms / nav / dashboard / footer)", "cards") ??
+      "cards";
+    const supabase = createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+    const { error } = await supabase.from("templates").insert({
+      owner_id: user.id,
+      name: name.trim(),
+      category: category.trim(),
+      code: toTemplateCode(code),
+      is_global: false,
+    });
+    flashStatus(error ? "error" : "saved");
+  }
+
   function exportCode() {
     const blob = new Blob([code], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
@@ -227,6 +281,7 @@ export function Workspace({
     append((prev) => [...prev, { sender: "user", content: prompt }]);
     setBusy(role);
     setStatus("generating");
+    setRefineHints(null);
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
@@ -272,10 +327,11 @@ export function Workspace({
         onExport={exportCode}
         onDeploy={deploy}
         onOpenDesign={() => setDesignPanelOpen(true)}
+        onOpenTemplates={() => setTemplatesOpen(true)}
       />
 
       <div className="flex flex-1 overflow-hidden">
-        <FileTree />
+        <FileTree onSaveTemplate={handleSaveTemplate} />
 
         {/* Developer AI drawer */}
         {devOpen ? (
@@ -287,6 +343,8 @@ export function Workspace({
                 messages={dev}
                 busy={busy === "dev_ai"}
                 onSend={(p) => send("dev_ai", p)}
+                suggestions={refineHints ?? undefined}
+                onSuggestion={(s) => send("dev_ai", s)}
               />
             </div>
             <CollapseTab side="left" onClick={() => setDevOpen(false)} />
@@ -355,6 +413,8 @@ export function Workspace({
                 messages={design}
                 busy={busy === "design_ai"}
                 onSend={(p) => send("design_ai", p)}
+                suggestions={refineHints ?? undefined}
+                onSuggestion={(s) => send("design_ai", s)}
               />
             </div>
             <CollapseTab side="right" onClick={() => setDesignOpen(false)} />
@@ -375,6 +435,13 @@ export function Workspace({
           tokens={tokens}
           onChange={handleTokensChange}
           onClose={() => setDesignPanelOpen(false)}
+        />
+      )}
+
+      {templatesOpen && (
+        <TemplateLibrary
+          onInsert={handleInsertTemplate}
+          onClose={() => setTemplatesOpen(false)}
         />
       )}
     </div>

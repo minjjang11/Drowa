@@ -195,3 +195,30 @@ create policy tokens_all on design_tokens for all
   using (is_project_member(project_id)) with check (is_project_member(project_id));
 
 alter publication supabase_realtime add table design_tokens;
+
+-- ─────────────────────────────────────────────────────────────
+-- Phase 3-2: Template library (custom user templates; built-ins live in code)
+-- ─────────────────────────────────────────────────────────────
+
+create table if not exists templates (
+  id          uuid primary key default gen_random_uuid(),
+  owner_id    uuid references auth.users(id) on delete cascade,
+  name        text not null,
+  category    text not null,
+  code        text not null,
+  preview_url text,
+  is_global   boolean not null default false,
+  created_at  timestamptz not null default now()
+);
+
+create index if not exists idx_templates_owner on templates(owner_id);
+
+alter table templates enable row level security;
+
+-- A user sees global templates + their own; can write only their own.
+drop policy if exists templates_select on templates;
+create policy templates_select on templates for select
+  using (is_global = true or owner_id = auth.uid());
+drop policy if exists templates_write on templates;
+create policy templates_write on templates for all
+  using (owner_id = auth.uid()) with check (owner_id = auth.uid());

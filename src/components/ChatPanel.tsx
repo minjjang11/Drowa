@@ -14,12 +14,16 @@ export function ChatPanel({
   messages,
   busy,
   onSend,
+  suggestions,
+  onSuggestion,
 }: {
   role: AiRole;
   title: string;
   messages: ChatMessage[];
   busy: boolean;
   onSend: (prompt: string) => void;
+  suggestions?: string[];
+  onSuggestion?: (s: string) => void;
 }) {
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -87,6 +91,24 @@ export function ChatPanel({
           </div>
         )}
       </div>
+
+      {suggestions && suggestions.length > 0 && (
+        <div className="shrink-0 border-t border-border px-2 pt-2">
+          <p className="mb-1.5 font-mono text-[10px] text-muted">Refine this template…</p>
+          <div className="flex flex-wrap gap-1">
+            {suggestions.map((s) => (
+              <button
+                key={s}
+                disabled={busy}
+                onClick={() => onSuggestion?.(s)}
+                className="glow-hover rounded-[4px] border border-border bg-background px-2 py-1 font-mono text-[10px] text-foreground transition-colors hover:border-accent disabled:opacity-50"
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <form onSubmit={submit} className="shrink-0 border-t border-border p-2">
         <textarea

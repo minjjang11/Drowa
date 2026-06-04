@@ -27,6 +27,7 @@ export function Toolbar({
   onExport,
   onDeploy,
   onOpenDesign,
+  onOpenTemplates,
 }: {
   projectId: string;
   projectName: string;
@@ -36,6 +37,7 @@ export function Toolbar({
   onExport: () => void;
   onDeploy: () => void;
   onOpenDesign: () => void;
+  onOpenTemplates: () => void;
 }) {
   const [name, setName] = useState(projectName);
   const meta = STATUS_META[status];
@@ -88,6 +90,13 @@ export function Toolbar({
 
       {/* Right: design system + status + export + deploy */}
       <div className="flex items-center gap-2">
+        <button
+          onClick={onOpenTemplates}
+          title="Templates"
+          className="glow-hover flex h-7 w-7 items-center justify-center rounded-[4px] border border-border bg-background text-sm text-foreground transition-colors hover:border-accent"
+        >
+          ▦
+        </button>
         <button
           onClick={onOpenDesign}
           title="Design System"
