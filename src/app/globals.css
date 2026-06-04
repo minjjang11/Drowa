@@ -36,6 +36,42 @@ body {
   box-sizing: border-box;
 }
 
+/* Minimal markdown rendering for the context.md preview */
+.prose-drowa h1 { font-size: 1.25rem; font-weight: 700; margin: 0.6em 0 0.3em; }
+.prose-drowa h2 { font-size: 1.05rem; font-weight: 600; margin: 0.6em 0 0.3em; }
+.prose-drowa h3 { font-size: 0.95rem; font-weight: 600; margin: 0.5em 0 0.25em; }
+.prose-drowa p { margin: 0.4em 0; }
+.prose-drowa ul, .prose-drowa ol { margin: 0.4em 0; padding-left: 1.3em; }
+.prose-drowa ul { list-style: disc; }
+.prose-drowa ol { list-style: decimal; }
+.prose-drowa li { margin: 0.15em 0; }
+.prose-drowa a { color: var(--accent); text-decoration: underline; }
+.prose-drowa code {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.85em;
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0.05em 0.35em;
+}
+.prose-drowa pre {
+  font-family: var(--font-geist-mono), monospace;
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.7em 0.9em;
+  overflow-x: auto;
+  margin: 0.5em 0;
+}
+.prose-drowa pre code { background: none; border: none; padding: 0; }
+.prose-drowa blockquote {
+  border-left: 3px solid var(--border);
+  padding-left: 0.8em;
+  color: var(--muted);
+  margin: 0.5em 0;
+}
+.prose-drowa hr { border: none; border-top: 1px solid var(--border); margin: 0.8em 0; }
+
 /* IDE-dense scrollbars */
 ::-webkit-scrollbar {
   width: 8px;

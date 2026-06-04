@@ -24,7 +24,7 @@ export default async function ProjectPage({
     .maybeSingle();
   if (!project) notFound();
 
-  const [{ data: file }, { data: overridesFile }, { data: messages }] =
+  const [{ data: file }, { data: overridesFile }, { data: context }, { data: messages }] =
     await Promise.all([
       supabase
         .from("files")
@@ -37,6 +37,11 @@ export default async function ProjectPage({
         .select("content")
         .eq("project_id", id)
         .eq("path", "overrides.json")
+        .maybeSingle(),
+      supabase
+        .from("context_md")
+        .select("content, updated_at")
+        .eq("project_id", id)
         .maybeSingle(),
       supabase
         .from("messages")
@@ -68,6 +73,8 @@ export default async function ProjectPage({
       projectName={(project as Project).name}
       initialCode={(file as FileRow | null)?.content ?? ""}
       initialOverrides={initialOverrides}
+      initialContextMd={(context as { content: string } | null)?.content ?? ""}
+      initialContextUpdatedAt={(context as { updated_at: string } | null)?.updated_at ?? null}
       initialDev={toChat(all, "dev_ai")}
       initialDesign={toChat(all, "design_ai")}
     />

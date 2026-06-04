@@ -7,6 +7,7 @@ import { PropertyPanel } from "./PropertyPanel";
 import { ChatPanel, type ChatMessage } from "./ChatPanel";
 import { Toolbar } from "./Toolbar";
 import { FileTree } from "./FileTree";
+import { ContextEditor } from "./ContextEditor";
 import type {
   AiRole,
   DeviceMode,
@@ -29,6 +30,8 @@ export function Workspace({
   projectName,
   initialCode,
   initialOverrides,
+  initialContextMd,
+  initialContextUpdatedAt,
   initialDev,
   initialDesign,
 }: {
@@ -36,11 +39,15 @@ export function Workspace({
   projectName: string;
   initialCode: string;
   initialOverrides: Overrides;
+  initialContextMd: string;
+  initialContextUpdatedAt: string | null;
   initialDev: ChatMessage[];
   initialDesign: ChatMessage[];
 }) {
   const [code, setCode] = useState(initialCode);
   const [overrides, setOverrides] = useState<Overrides>(initialOverrides);
+  const [contextMd, setContextMd] = useState(initialContextMd);
+  const [contextUpdatedAt, setContextUpdatedAt] = useState(initialContextUpdatedAt);
   const [dev, setDev] = useState<ChatMessage[]>(initialDev);
   const [design, setDesign] = useState<ChatMessage[]>(initialDesign);
   const [busy, setBusy] = useState<AiRole | null>(null);
@@ -101,6 +108,17 @@ export function Workspace({
           }
         },
       )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "context_md", filter: `project_id=eq.${projectId}` },
+        (payload) => {
+          const row = payload.new as { content: string; updated_at: string };
+          if (typeof row?.content === "string") {
+            setContextMd(row.content);
+            setContextUpdatedAt(row.updated_at);
+          }
+        },
+      )
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
@@ -134,6 +152,17 @@ export function Workspace({
       }
       return !v;
     });
+  }
+
+  async function saveContext(next: string) {
+    setContextMd(next);
+    setContextUpdatedAt(new Date().toISOString());
+    const supabase = createClient();
+    const { error } = await supabase
+      .from("context_md")
+      .update({ content: next })
+      .eq("project_id", projectId);
+    flashStatus(error ? "error" : "saved");
   }
 
   function exportCode() {
@@ -289,6 +318,12 @@ export function Workspace({
           <ReopenRail label="DESIGN" onClick={() => setDesignOpen(true)} />
         )}
       </div>
+
+      <ContextEditor
+        content={contextMd}
+        updatedAt={contextUpdatedAt}
+        onSave={saveContext}
+      />
     </div>
   );
 }
