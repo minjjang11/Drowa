@@ -11,14 +11,12 @@ export interface ChatMessage {
 export function ChatPanel({
   role,
   title,
-  accent,
   messages,
   busy,
   onSend,
 }: {
   role: AiRole;
   title: string;
-  accent: string;
   messages: ChatMessage[];
   busy: boolean;
   onSend: (prompt: string) => void;
@@ -40,16 +38,13 @@ export function ChatPanel({
 
   return (
     <div className="flex h-full flex-col">
-      <div
-        className="border-b border-white/10 px-3 py-2 text-xs font-semibold uppercase tracking-wide"
-        style={{ color: accent }}
-      >
+      <div className="flex h-9 items-center border-b border-border px-3 font-mono text-[11px] font-medium uppercase tracking-wider text-muted">
         {title}
       </div>
 
-      <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-3">
+      <div ref={scrollRef} className="flex-1 space-y-2.5 overflow-y-auto p-3">
         {messages.length === 0 && (
-          <p className="text-xs text-white/30">
+          <p className="font-mono text-[11px] leading-relaxed text-muted">
             {role === "dev_ai"
               ? "Ask about logic, structure, behavior."
               : "Ask about color, layout, typography."}
@@ -58,21 +53,21 @@ export function ChatPanel({
         {messages.map((m, i) => (
           <div
             key={i}
-            className={`rounded-lg px-3 py-2 text-sm ${
+            className={`rounded-[4px] px-2.5 py-2 text-[13px] leading-relaxed ${
               m.sender === "user"
-                ? "ml-6 bg-white/10"
-                : "mr-6 bg-black/30 border border-white/10"
+                ? "ml-5 bg-background text-foreground"
+                : "mr-5 border border-border bg-surface text-foreground"
             }`}
           >
-            <pre className="whitespace-pre-wrap break-words font-sans">
-              {m.content}
-            </pre>
+            <pre className="whitespace-pre-wrap break-words font-sans">{m.content}</pre>
           </div>
         ))}
-        {busy && <p className="text-xs text-white/40">thinking…</p>}
+        {busy && (
+          <p className="font-mono text-[11px] text-accent">thinking…</p>
+        )}
       </div>
 
-      <form onSubmit={submit} className="border-t border-white/10 p-2">
+      <form onSubmit={submit} className="border-t border-border p-2">
         <textarea
           rows={2}
           value={input}
@@ -82,7 +77,7 @@ export function ChatPanel({
             if (e.key === "Enter" && !e.shiftKey) submit(e);
           }}
           placeholder="Describe a change…"
-          className="w-full resize-none rounded-md border border-white/10 bg-black/30 px-2 py-1.5 text-sm outline-none focus:border-white/30"
+          className="w-full resize-none rounded-[4px] border border-border bg-surface px-2.5 py-2 text-[13px] outline-none transition-colors duration-150 placeholder:text-muted focus:border-accent disabled:opacity-50"
         />
       </form>
     </div>

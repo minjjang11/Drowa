@@ -2,7 +2,7 @@ import { redirect, notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Workspace } from "@/components/Workspace";
 import type { ChatMessage } from "@/components/ChatPanel";
-import type { FileRow, Message, Project } from "@/lib/types";
+import type { FileRow, Message, Overrides, Project } from "@/lib/types";
 
 export default async function ProjectPage({
   params,
@@ -24,19 +24,33 @@ export default async function ProjectPage({
     .maybeSingle();
   if (!project) notFound();
 
-  const [{ data: file }, { data: messages }] = await Promise.all([
-    supabase
-      .from("files")
-      .select("*")
-      .eq("project_id", id)
-      .eq("path", "App.tsx")
-      .maybeSingle(),
-    supabase
-      .from("messages")
-      .select("*")
-      .eq("project_id", id)
-      .order("created_at", { ascending: true }),
-  ]);
+  const [{ data: file }, { data: overridesFile }, { data: messages }] =
+    await Promise.all([
+      supabase
+        .from("files")
+        .select("*")
+        .eq("project_id", id)
+        .eq("path", "App.tsx")
+        .maybeSingle(),
+      supabase
+        .from("files")
+        .select("content")
+        .eq("project_id", id)
+        .eq("path", "overrides.json")
+        .maybeSingle(),
+      supabase
+        .from("messages")
+        .select("*")
+        .eq("project_id", id)
+        .order("created_at", { ascending: true }),
+    ]);
+
+  let initialOverrides: Overrides = {};
+  try {
+    initialOverrides = JSON.parse((overridesFile as { content: string } | null)?.content ?? "{}");
+  } catch {
+    initialOverrides = {};
+  }
 
   const toChat = (rows: Message[], role: string): ChatMessage[] =>
     rows
@@ -53,6 +67,7 @@ export default async function ProjectPage({
       projectId={id}
       projectName={(project as Project).name}
       initialCode={(file as FileRow | null)?.content ?? ""}
+      initialOverrides={initialOverrides}
       initialDev={toChat(all, "dev_ai")}
       initialDesign={toChat(all, "design_ai")}
     />

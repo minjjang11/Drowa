@@ -48,10 +48,10 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center px-4">
-      <div className="w-full max-w-sm space-y-4 rounded-xl border border-white/10 bg-white/5 p-8">
+      <div className="w-full max-w-sm space-y-4 rounded-[6px] border border-border bg-surface p-8 shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
         <div>
-          <h1 className="text-2xl font-bold">Drowa</h1>
-          <p className="text-sm text-white/50">
+          <h1 className="text-2xl font-bold tracking-tight">Drowa</h1>
+          <p className="font-mono text-xs text-muted">
             {mode === "signin" ? "Sign in to your projects" : "Create an account"}
           </p>
         </div>
@@ -59,7 +59,7 @@ export default function LoginPage() {
         <button
           onClick={handleGoogle}
           disabled={googleLoading}
-          className="flex w-full items-center justify-center gap-3 rounded-md border border-white/10 bg-white/5 px-3 py-2.5 text-sm font-medium hover:bg-white/10 disabled:opacity-50 transition-colors"
+          className="flex w-full items-center justify-center gap-3 rounded-[4px] border border-border bg-surface px-3 py-2.5 text-sm font-medium transition-colors duration-150 hover:border-accent disabled:opacity-50"
         >
           <svg className="h-4 w-4" viewBox="0 0 24 24">
             <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -71,9 +71,9 @@ export default function LoginPage() {
         </button>
 
         <div className="flex items-center gap-3">
-          <div className="h-px flex-1 bg-white/10" />
-          <span className="text-xs text-white/30">or</span>
-          <div className="h-px flex-1 bg-white/10" />
+          <div className="h-px flex-1 bg-border" />
+          <span className="font-mono text-[11px] text-muted">or</span>
+          <div className="h-px flex-1 bg-border" />
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-3">
@@ -83,7 +83,7 @@ export default function LoginPage() {
             placeholder="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none focus:border-white/30"
+            className="w-full rounded-[4px] border border-border bg-surface px-3 py-2 text-sm outline-none transition-colors duration-150 placeholder:text-muted focus:border-accent"
           />
           <input
             type="password"
@@ -91,17 +91,17 @@ export default function LoginPage() {
             placeholder="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none focus:border-white/30"
+            className="w-full rounded-[4px] border border-border bg-surface px-3 py-2 text-sm outline-none transition-colors duration-150 placeholder:text-muted focus:border-accent"
           />
 
           {(error || authError) && (
-            <p className="text-sm text-red-400">{error ?? "Authentication failed."}</p>
+            <p className="text-sm text-red-500">{error ?? "Authentication failed."}</p>
           )}
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-md bg-indigo-500 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-400 disabled:opacity-50"
+            className="w-full rounded-[4px] bg-accent px-3 py-2 text-sm font-medium text-white transition-opacity duration-150 hover:opacity-90 disabled:opacity-50"
           >
             {loading ? "..." : mode === "signin" ? "Sign in" : "Sign up"}
           </button>
@@ -110,7 +110,7 @@ export default function LoginPage() {
         <button
           type="button"
           onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
-          className="w-full text-center text-xs text-white/40 hover:text-white/70"
+          className="w-full text-center font-mono text-[11px] text-muted transition-colors duration-150 hover:text-foreground"
         >
           {mode === "signin" ? "No account? Sign up" : "Have an account? Sign in"}
         </button>

@@ -44,3 +44,17 @@ export const AI_LABEL: Record<AiRole, string> = {
   dev_ai: "Developer AI",
   design_ai: "Designer AI",
 };
+
+// ─── Visual editor ───────────────────────────────────────────────
+/** A partial set of inline CSS props (camelCase keys) applied to one element. */
+export type StyleMap = Record<string, string>;
+
+/** Per-project overrides: drowa element id → style props. Stored as overrides.json. */
+export type Overrides = Record<string, StyleMap>;
+
+/** Payload the iframe sends when an element is clicked. */
+export interface Selection {
+  id: string;
+  tag: string;
+  styles: StyleMap;
+}
