@@ -25,6 +25,7 @@ export function ChatPanel({
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const tag = role === "dev_ai" ? "DEV" : "DESIGN";
+  const tagColor = role === "dev_ai" ? "text-accent" : "text-accent-2";
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
@@ -41,7 +42,7 @@ export function ChatPanel({
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
-        <span className="font-mono text-[10px] font-semibold tracking-wider text-accent">
+        <span className={`font-mono text-[10px] font-semibold tracking-wider ${tagColor}`}>
           [{tag}]
         </span>
         <span className="font-mono text-[11px] uppercase tracking-wider text-muted">
@@ -59,14 +60,14 @@ export function ChatPanel({
         )}
         {messages.map((m, i) => (
           <div key={i} className="space-y-1">
-            <span className="font-mono text-[9px] font-semibold tracking-wider text-muted">
+            <span className={`font-mono text-[9px] font-semibold tracking-wider ${m.sender === "user" ? "text-muted" : tagColor}`}>
               {m.sender === "user" ? "YOU" : tag}
             </span>
             <div
               className={`rounded-[4px] px-2.5 py-2 text-[13px] leading-relaxed ${
                 m.sender === "user"
                   ? "bg-background text-foreground"
-                  : "border border-border bg-surface text-foreground"
+                  : "border-l-2 border-accent bg-surface-elevated text-foreground"
               }`}
             >
               <pre className="whitespace-pre-wrap break-words font-sans">{m.content}</pre>
@@ -75,10 +76,10 @@ export function ChatPanel({
         ))}
         {busy && (
           <div className="space-y-1">
-            <span className="font-mono text-[9px] font-semibold tracking-wider text-accent">
+            <span className={`font-mono text-[9px] font-semibold tracking-wider ${tagColor}`}>
               {tag}
             </span>
-            <div className="space-y-1.5 rounded-[4px] border border-border bg-surface px-2.5 py-2.5">
+            <div className="space-y-1.5 rounded-[4px] border-l-2 border-accent bg-surface-elevated px-2.5 py-2.5">
               <div className="h-2 w-3/4 animate-pulse rounded bg-border" />
               <div className="h-2 w-full animate-pulse rounded bg-border" />
               <div className="h-2 w-1/2 animate-pulse rounded bg-border" />
@@ -97,7 +98,7 @@ export function ChatPanel({
             if (e.key === "Enter" && !e.shiftKey) submit(e);
           }}
           placeholder="describe a change…"
-          className="w-full resize-none rounded-[4px] border border-border bg-surface px-2.5 py-2 font-mono text-[12px] outline-none transition-colors duration-150 placeholder:text-muted focus:border-accent disabled:opacity-50"
+          className="input-dark w-full resize-none rounded-[4px] px-2.5 py-2 font-mono text-[12px] disabled:opacity-50"
         />
       </form>
     </div>

@@ -11,15 +11,15 @@ export function NewProjectButton({ variant }: { variant: "card" | "button" }) {
     variant === "card" ? (
       <button
         onClick={() => setOpen(true)}
-        className="flex w-full max-w-md flex-col items-center justify-center gap-2 rounded-[8px] border border-dashed border-[#c0c0c0] bg-surface px-6 py-10 transition-colors duration-150 hover:border-accent"
+        className="glow-hover flex w-full max-w-md flex-col items-center justify-center gap-2 rounded-[8px] border border-dashed border-[#3a3a30] bg-surface px-6 py-10 transition-colors duration-150 hover:border-accent"
       >
-        <span className="text-2xl text-muted">+</span>
-        <span className="text-sm font-medium">New Project</span>
+        <span className="text-2xl text-accent">+</span>
+        <span className="text-sm font-medium text-foreground">New Project</span>
       </button>
     ) : (
       <button
         onClick={() => setOpen(true)}
-        className="rounded-[4px] bg-accent px-3 py-1.5 text-sm font-medium text-white transition-opacity duration-150 hover:opacity-90"
+        className="btn-grad rounded-[4px] px-3 py-1.5 text-sm font-medium text-foreground"
       >
         + New Project
       </button>
@@ -36,10 +36,10 @@ export function NewProjectButton({ variant }: { variant: "card" | "button" }) {
           <form
             action={createProject}
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-sm space-y-4 rounded-[8px] border border-border bg-surface p-6 shadow-[0_4px_16px_rgba(0,0,0,0.08)]"
+            className="grad-border w-full max-w-sm space-y-4 rounded-[8px] bg-surface p-6 shadow-[0_8px_32px_rgba(0,0,0,0.6)]"
           >
             <div>
-              <h2 className="text-base font-semibold">New Project</h2>
+              <h2 className="serif text-lg italic text-foreground">New Project</h2>
               <p className="font-mono text-[11px] text-muted">Give it a name to get started.</p>
             </div>
             <input
@@ -47,7 +47,7 @@ export function NewProjectButton({ variant }: { variant: "card" | "button" }) {
               autoFocus
               required
               placeholder="project name"
-              className="w-full rounded-[4px] border border-border bg-surface px-3 py-2 text-sm outline-none transition-colors duration-150 placeholder:text-muted focus:border-accent"
+              className="input-dark w-full rounded-[4px] px-3 py-2 text-sm"
             />
             <div className="flex justify-end gap-2">
               <button
@@ -59,7 +59,7 @@ export function NewProjectButton({ variant }: { variant: "card" | "button" }) {
               </button>
               <button
                 type="submit"
-                className="rounded-[4px] bg-accent px-3 py-1.5 text-sm font-medium text-white transition-opacity duration-150 hover:opacity-90"
+                className="btn-grad rounded-[4px] px-3 py-1.5 text-sm font-medium text-foreground"
               >
                 Create
               </button>

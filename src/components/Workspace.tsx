@@ -211,7 +211,7 @@ export function Workspace({
     <button
       onClick={() => setTab(id)}
       className={`rounded-[3px] px-2.5 py-1 font-mono text-[11px] transition-colors duration-150 ${
-        tab === id ? "bg-surface text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.06)]" : "text-muted hover:text-foreground"
+        tab === id ? "bg-surface-elevated text-accent shadow-[0_1px_2px_rgba(0,0,0,0.4)]" : "text-muted hover:text-foreground"
       }`}
     >
       {label}
@@ -235,7 +235,7 @@ export function Workspace({
 
         {/* Developer AI drawer */}
         {devOpen ? (
-          <aside className="flex w-72 shrink-0 flex-col border-r border-border bg-surface">
+          <aside className="flex w-72 shrink-0 flex-col border-r border-border bg-surface grad-border">
             <div className="relative flex-1 overflow-hidden">
               <ChatPanel
                 role="dev_ai"
@@ -252,8 +252,8 @@ export function Workspace({
         )}
 
         {/* Preview hero */}
-        <main className="relative flex flex-1 flex-col overflow-hidden bg-[#f5f5f5]">
-          <div className="flex h-9 shrink-0 items-center justify-between border-b border-border bg-background px-2">
+        <main className="relative flex flex-1 flex-col overflow-hidden bg-background">
+          <div className="flex h-9 shrink-0 items-center justify-between border-b border-border bg-surface px-2">
             <div className="flex items-center gap-0.5 rounded-[5px] border border-border bg-background p-0.5">
               {tabBtn("preview", "Preview")}
               {tabBtn("code", "Code")}
@@ -261,7 +261,7 @@ export function Workspace({
             <button
               onClick={toggleEdit}
               className={`flex items-center gap-1.5 rounded-[4px] border px-2.5 py-1 font-mono text-[11px] transition-colors duration-150 ${
-                editMode ? "border-accent bg-accent text-white" : "border-border bg-surface text-muted hover:text-foreground"
+                editMode ? "border-accent bg-accent text-background" : "border-border bg-surface text-muted hover:text-foreground"
               }`}
             >
               <span className={`h-1.5 w-1.5 rounded-full ${editMode ? "bg-white" : "bg-muted"}`} />
@@ -272,7 +272,7 @@ export function Workspace({
           <div className="flex-1 overflow-auto p-3">
             {tab === "preview" ? (
               <div
-                className="mx-auto h-full overflow-hidden rounded-[4px] border border-border bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-[max-width] duration-150"
+                className="grad-border relative mx-auto h-full overflow-hidden rounded-[6px] transition-[max-width] duration-150"
                 style={{ maxWidth: DEVICE_WIDTH[device] }}
               >
                 <Preview
@@ -283,9 +283,10 @@ export function Workspace({
                   onSelect={setSelection}
                   onMove={handleMove}
                 />
+                <div className="vignette pointer-events-none absolute inset-0 rounded-[6px]" />
               </div>
             ) : (
-              <pre className="h-full overflow-auto rounded-[4px] border border-border bg-surface p-4 font-mono text-[12px] leading-relaxed text-foreground">
+              <pre className="h-full overflow-auto rounded-[6px] border border-border bg-surface p-4 font-mono text-[12px] leading-relaxed text-foreground">
                 {code}
               </pre>
             )}
@@ -302,7 +303,7 @@ export function Workspace({
 
         {/* Designer AI drawer */}
         {designOpen ? (
-          <aside className="flex w-72 shrink-0 flex-col border-l border-border bg-surface">
+          <aside className="flex w-72 shrink-0 flex-col border-l border-border bg-surface grad-border">
             <div className="relative flex-1 overflow-hidden">
               <ChatPanel
                 role="design_ai"

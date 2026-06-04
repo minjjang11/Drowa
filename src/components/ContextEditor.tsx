@@ -86,7 +86,7 @@ export function ContextEditor({
       />
       <div className="flex h-9 shrink-0 items-center justify-between border-b border-border px-4">
         <div className="flex items-center gap-3">
-          <span className="font-mono text-[11px] font-medium text-foreground">context.md</span>
+          <span className="serif text-[14px] italic text-accent">context.md</span>
           <div className="flex items-center gap-0.5 rounded-[5px] border border-border bg-background p-0.5">
             <button
               onClick={() => {
@@ -129,7 +129,7 @@ export function ContextEditor({
             height="100%"
             defaultLanguage="markdown"
             value={content}
-            theme="vs"
+            theme="vs-dark"
             onChange={(v) => {
               draftRef.current = v ?? "";
             }}

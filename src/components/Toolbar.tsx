@@ -12,10 +12,10 @@ const DEVICES: { id: DeviceMode; label: string; icon: string }[] = [
 ];
 
 const STATUS_META: Record<Status, { label: string; dot: string; spin?: boolean }> = {
-  ready: { label: "Ready", dot: "bg-emerald-500" },
+  ready: { label: "Ready", dot: "bg-success" },
   generating: { label: "Generating…", dot: "bg-accent", spin: true },
   saved: { label: "Saved", dot: "bg-muted" },
-  error: { label: "Error", dot: "bg-red-500" },
+  error: { label: "Error", dot: "bg-error" },
 };
 
 export function Toolbar({
@@ -49,10 +49,10 @@ export function Toolbar({
   }
 
   return (
-    <header className="flex h-11 shrink-0 items-center justify-between border-b border-border bg-surface px-3">
+    <header className="grad-border-bottom flex h-11 shrink-0 items-center justify-between bg-surface px-3">
       {/* Left: logo + editable name */}
       <div className="flex items-center gap-2">
-        <Link href="/" className="font-mono text-xs font-semibold text-foreground hover:text-accent">
+        <Link href="/" className="font-mono text-xs font-semibold text-foreground transition-colors hover:text-accent">
           drowa
         </Link>
         <span className="text-border">/</span>
@@ -61,7 +61,7 @@ export function Toolbar({
           onChange={(e) => setName(e.target.value)}
           onBlur={commitName}
           onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-          className="w-40 rounded-[3px] border border-transparent bg-transparent px-1.5 py-0.5 text-sm font-medium outline-none hover:border-border focus:border-accent"
+          className="serif w-44 rounded-[3px] border border-transparent bg-transparent px-1.5 py-0.5 text-base italic text-foreground outline-none transition-colors hover:border-border focus:border-accent"
         />
       </div>
 
@@ -74,7 +74,7 @@ export function Toolbar({
             title={d.label}
             className={`flex items-center gap-1.5 rounded-[3px] px-2.5 py-1 font-mono text-[11px] transition-colors duration-150 ${
               device === d.id
-                ? "bg-surface text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.06)]"
+                ? "bg-surface-elevated text-accent shadow-[0_1px_2px_rgba(0,0,0,0.4)]"
                 : "text-muted hover:text-foreground"
             }`}
           >
@@ -88,19 +88,19 @@ export function Toolbar({
       <div className="flex items-center gap-2">
         <div className="flex items-center gap-1.5 rounded-[4px] border border-border bg-background px-2 py-1 font-mono text-[11px] text-muted">
           <span
-            className={`h-1.5 w-1.5 rounded-full ${meta.dot} ${meta.spin ? "animate-pulse" : ""}`}
+            className={`h-1.5 w-1.5 rounded-full ${meta.dot} ${meta.spin ? "amber-pulse" : ""}`}
           />
           {meta.label}
         </div>
         <button
           onClick={onExport}
-          className="rounded-[4px] border border-border bg-surface px-2.5 py-1 font-mono text-[11px] text-muted transition-colors duration-150 hover:text-foreground"
+          className="btn-grad rounded-[4px] px-2.5 py-1 font-mono text-[11px] text-muted hover:text-foreground"
         >
           Export
         </button>
         <button
           onClick={onDeploy}
-          className="rounded-[4px] bg-accent px-2.5 py-1 font-mono text-[11px] font-medium text-white transition-opacity duration-150 hover:opacity-90"
+          className="btn-grad rounded-[4px] px-2.5 py-1 font-mono text-[11px] font-medium text-foreground"
         >
           Deploy
         </button>

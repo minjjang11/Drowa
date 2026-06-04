@@ -19,12 +19,12 @@ function parseTranslate(t?: string): { x: number; y: number } {
 }
 
 const numInput =
-  "h-7 w-full rounded-[3px] border border-border bg-surface px-1.5 text-center font-mono text-[11px] outline-none focus:border-accent";
+  "input-dark h-7 w-full rounded-[3px] px-1.5 text-center font-mono text-[11px]";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="border-b border-border px-3 py-3">
-      <div className="mb-2 font-mono text-[10px] uppercase tracking-wider text-muted">
+      <div className="serif mb-2 text-[13px] italic text-accent">
         {title}
       </div>
       <div className="space-y-2">{children}</div>
@@ -69,7 +69,7 @@ export function PropertyPanel({
 
   return (
     <div
-      className={`absolute right-0 top-0 z-10 flex h-full w-60 flex-col border-l border-border bg-surface shadow-[-1px_0_3px_rgba(0,0,0,0.04)] transition-transform duration-150 ${
+      className={`grad-border absolute right-0 top-0 z-10 flex h-full w-60 flex-col bg-surface shadow-[-4px_0_24px_rgba(0,0,0,0.5)] transition-transform duration-[250ms] ease-out ${
         open ? "translate-x-0" : "translate-x-full"
       }`}
     >
@@ -105,21 +105,25 @@ export function PropertyPanel({
 
         <Section title="Colors">
           <Field label="text">
-            <input
-              type="color"
-              value={toHex(s.color)}
-              onChange={(e) => onChange({ color: e.target.value })}
-              className="h-7 w-7 cursor-pointer rounded-[3px] border border-border bg-surface p-0.5"
-            />
+            <span className="grad-border rounded-[4px] p-0.5">
+              <input
+                type="color"
+                value={toHex(s.color)}
+                onChange={(e) => onChange({ color: e.target.value })}
+                className="block h-6 w-6 cursor-pointer rounded-[2px] border-0 bg-transparent p-0"
+              />
+            </span>
             <span className="font-mono text-[10px] text-muted">{toHex(s.color)}</span>
           </Field>
           <Field label="bg">
-            <input
-              type="color"
-              value={toHex(s.backgroundColor)}
-              onChange={(e) => onChange({ backgroundColor: e.target.value })}
-              className="h-7 w-7 cursor-pointer rounded-[3px] border border-border bg-surface p-0.5"
-            />
+            <span className="grad-border rounded-[4px] p-0.5">
+              <input
+                type="color"
+                value={toHex(s.backgroundColor)}
+                onChange={(e) => onChange({ backgroundColor: e.target.value })}
+                className="block h-6 w-6 cursor-pointer rounded-[2px] border-0 bg-transparent p-0"
+              />
+            </span>
             <span className="font-mono text-[10px] text-muted">{toHex(s.backgroundColor)}</span>
           </Field>
         </Section>

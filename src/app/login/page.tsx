@@ -48,9 +48,9 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center px-4">
-      <div className="w-full max-w-sm space-y-4 rounded-[6px] border border-border bg-surface p-8 shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
+      <div className="grad-border w-full max-w-sm space-y-4 rounded-[8px] bg-surface p-8 shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Drowa</h1>
+          <h1 className="serif text-4xl italic tracking-tight text-foreground">Drowa</h1>
           <p className="font-mono text-xs text-muted">
             {mode === "signin" ? "Sign in to your projects" : "Create an account"}
           </p>
@@ -59,7 +59,7 @@ export default function LoginPage() {
         <button
           onClick={handleGoogle}
           disabled={googleLoading}
-          className="flex w-full items-center justify-center gap-3 rounded-[4px] border border-border bg-surface px-3 py-2.5 text-sm font-medium transition-colors duration-150 hover:border-accent disabled:opacity-50"
+          className="glow-hover flex w-full items-center justify-center gap-3 rounded-[4px] border border-border bg-background px-3 py-2.5 text-sm font-medium transition-colors duration-150 hover:border-accent disabled:opacity-50"
         >
           <svg className="h-4 w-4" viewBox="0 0 24 24">
             <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -83,7 +83,7 @@ export default function LoginPage() {
             placeholder="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-[4px] border border-border bg-surface px-3 py-2 text-sm outline-none transition-colors duration-150 placeholder:text-muted focus:border-accent"
+            className="input-dark w-full rounded-[4px] px-3 py-2 text-sm"
           />
           <input
             type="password"
@@ -91,17 +91,17 @@ export default function LoginPage() {
             placeholder="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-[4px] border border-border bg-surface px-3 py-2 text-sm outline-none transition-colors duration-150 placeholder:text-muted focus:border-accent"
+            className="input-dark w-full rounded-[4px] px-3 py-2 text-sm"
           />
 
           {(error || authError) && (
-            <p className="text-sm text-red-500">{error ?? "Authentication failed."}</p>
+            <p className="text-sm text-error">{error ?? "Authentication failed."}</p>
           )}
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-[4px] bg-accent px-3 py-2 text-sm font-medium text-white transition-opacity duration-150 hover:opacity-90 disabled:opacity-50"
+            className="btn-grad w-full rounded-[4px] px-3 py-2 text-sm font-medium text-foreground disabled:opacity-50"
           >
             {loading ? "..." : mode === "signin" ? "Sign in" : "Sign up"}
           </button>
