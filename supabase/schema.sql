@@ -275,3 +275,39 @@ create policy quick_actions_select on quick_actions for select
 drop policy if exists quick_actions_write on quick_actions;
 create policy quick_actions_write on quick_actions for all
   using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+
+-- ─────────────────────────────────────────────────────────────
+-- Phase 3-6: GitHub import / sync
+-- ─────────────────────────────────────────────────────────────
+
+create table if not exists github_connections (
+  id                     uuid primary key default gen_random_uuid(),
+  user_id                uuid not null unique references auth.users(id) on delete cascade,
+  github_username        text not null,
+  access_token_encrypted text not null,
+  created_at             timestamptz not null default now()
+);
+
+create table if not exists github_links (
+  id             uuid primary key default gen_random_uuid(),
+  project_id     uuid not null unique references projects(id) on delete cascade,
+  repo_full_name text not null,
+  branch         text not null default 'main',
+  last_synced_at timestamptz,
+  created_at     timestamptz not null default now()
+);
+
+-- Track the remote blob SHA per file for conflict detection.
+alter table files add column if not exists github_sha text;
+
+alter table github_connections enable row level security;
+alter table github_links        enable row level security;
+
+-- Connections: owner-only. The token is AES-encrypted at rest regardless.
+drop policy if exists gh_conn_all on github_connections;
+create policy gh_conn_all on github_connections for all
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+drop policy if exists gh_links_all on github_links;
+create policy gh_links_all on github_links for all
+  using (is_project_member(project_id)) with check (is_project_member(project_id));

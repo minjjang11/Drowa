@@ -44,6 +44,12 @@ export default async function ProjectPage({
     supabase.from("messages").select("*").eq("project_id", id).order("created_at", { ascending: true }),
   ]);
 
+  const { data: ghLink } = await supabase
+    .from("github_links")
+    .select("repo_full_name, last_synced_at")
+    .eq("project_id", id)
+    .maybeSingle();
+
   const initialTokens =
     (tokenRow as { tokens: DesignTokens } | null)?.tokens ?? DEFAULT_TOKENS;
 
@@ -73,6 +79,7 @@ export default async function ProjectPage({
       initialContextMd={(context as { content: string } | null)?.content ?? ""}
       initialContextUpdatedAt={(context as { updated_at: string } | null)?.updated_at ?? null}
       initialTokens={initialTokens}
+      initialGithubLinked={!!ghLink}
       initialDev={toChat(all, "dev_ai")}
       initialDesign={toChat(all, "design_ai")}
     />

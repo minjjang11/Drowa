@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "./actions";
 import { NewProjectButton } from "@/components/NewProjectButton";
+import { GitHubConnect } from "@/components/GitHubConnect";
 import type { MemberRole, Project } from "@/lib/types";
 
 const HINTS = [
@@ -36,6 +37,7 @@ export default async function HomePage() {
       <header className="grad-border-bottom flex items-center justify-between bg-surface px-6 py-3">
         <span className="font-mono text-sm font-semibold">drowa</span>
         <div className="flex items-center gap-3">
+          <GitHubConnect />
           <span className="font-mono text-[11px] text-muted">{user.email}</span>
           <form action={signOut}>
             <button className="rounded-[4px] border border-border bg-surface px-3 py-1.5 font-mono text-xs text-muted transition-colors duration-150 hover:text-foreground">

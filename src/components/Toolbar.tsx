@@ -29,6 +29,9 @@ export function Toolbar({
   onOpenDesign,
   onOpenTemplates,
   onOpenInspiration,
+  github,
+  onSync,
+  onPull,
 }: {
   projectId: string;
   projectName: string;
@@ -40,6 +43,9 @@ export function Toolbar({
   onOpenDesign: () => void;
   onOpenTemplates: () => void;
   onOpenInspiration: () => void;
+  github: { linked: boolean; dirty: boolean; busy: boolean };
+  onSync: () => void;
+  onPull: () => void;
 }) {
   const [name, setName] = useState(projectName);
   const meta = STATUS_META[status];
@@ -69,6 +75,35 @@ export function Toolbar({
           onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
           className="serif w-44 rounded-[3px] border border-transparent bg-transparent px-1.5 py-0.5 text-base italic text-foreground outline-none transition-colors hover:border-border focus:border-accent"
         />
+        <span
+          className="flex items-center gap-1.5 font-mono text-[10px] text-muted"
+          title="GitHub status"
+        >
+          <span
+            className={`h-1.5 w-1.5 rounded-full ${
+              !github.linked ? "bg-muted" : github.dirty ? "bg-accent" : "bg-success"
+            }`}
+          />
+          {!github.linked ? "Not connected" : github.dirty ? "Changes" : "Synced"}
+        </span>
+        {github.linked && (
+          <div className="flex items-center gap-1">
+            <button
+              onClick={onPull}
+              disabled={github.busy}
+              className="glow-hover rounded-[3px] border border-border bg-surface px-2 py-0.5 font-mono text-[10px] text-muted transition-colors hover:border-accent hover:text-foreground disabled:opacity-50"
+            >
+              Pull
+            </button>
+            <button
+              onClick={onSync}
+              disabled={github.busy}
+              className="glow-hover rounded-[3px] border border-border bg-surface px-2 py-0.5 font-mono text-[10px] text-muted transition-colors hover:border-accent hover:text-foreground disabled:opacity-50"
+            >
+              {github.busy ? "Syncing…" : "Sync ↗"}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Center: device pill switcher */}

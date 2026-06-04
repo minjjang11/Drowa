@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Preview, type PreviewHandle } from "./Preview";
 import { PropertyPanel } from "./PropertyPanel";
@@ -57,6 +58,7 @@ export function Workspace({
   initialContextMd,
   initialContextUpdatedAt,
   initialTokens,
+  initialGithubLinked,
   initialDev,
   initialDesign,
 }: {
@@ -67,9 +69,11 @@ export function Workspace({
   initialContextMd: string;
   initialContextUpdatedAt: string | null;
   initialTokens: DesignTokens;
+  initialGithubLinked: boolean;
   initialDev: ChatMessage[];
   initialDesign: ChatMessage[];
 }) {
+  const router = useRouter();
   const [code, setCode] = useState(initialCode);
   const [overrides, setOverrides] = useState<Overrides>(initialOverrides);
   const [contextMd, setContextMd] = useState(initialContextMd);
@@ -83,6 +87,10 @@ export function Workspace({
   const [customActions, setCustomActions] = useState<QuickAction[]>([]);
   const [previewError, setPreviewError] = useState<{ message: string; stack?: string } | null>(null);
   const [lastRole, setLastRole] = useState<AiRole>("dev_ai");
+  const [ghDirty, setGhDirty] = useState(false);
+  const [ghBusy, setGhBusy] = useState(false);
+  const [conflicts, setConflicts] = useState<{ mode: "push" | "pull"; paths: string[] } | null>(null);
+  const [viewFile, setViewFile] = useState<{ path: string; content: string } | null>(null);
   const tokenSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [dev, setDev] = useState<ChatMessage[]>(initialDev);
   const [design, setDesign] = useState<ChatMessage[]>(initialDesign);
@@ -286,6 +294,7 @@ export function Workspace({
   async function handleInsertTemplate(t: Template) {
     const next = insertTemplate(code, t.code);
     setCode(next);
+    setGhDirty(true);
     setTemplatesOpen(false);
     setRefineHints(REFINE_PROMPTS);
     setStatus("generating");
@@ -325,6 +334,64 @@ export function Workspace({
       is_global: false,
     });
     flashStatus(error ? "error" : "saved");
+  }
+
+  // ── GitHub sync ──────────────────────────────────────
+  async function syncToGithub() {
+    const message =
+      window.prompt("Commit message?", `Drowa: ${new Date().toISOString()}`) ?? undefined;
+    if (message === undefined) return;
+    setGhBusy(true);
+    setStatus("generating");
+    try {
+      const res = await fetch("/api/github/push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, message }),
+      });
+      const data = await res.json();
+      if (res.status === 409) {
+        setConflicts({ mode: "push", paths: data.conflicts ?? [] });
+        setStatus("error");
+      } else if (!res.ok) {
+        flashStatus("error");
+      } else {
+        setGhDirty(false);
+        flashStatus("saved");
+      }
+    } finally {
+      setGhBusy(false);
+    }
+  }
+
+  async function pullFromGithub(resolve?: "remote" | "local") {
+    setGhBusy(true);
+    setStatus("generating");
+    try {
+      const res = await fetch("/api/github/pull", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, resolve }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        flashStatus("error");
+        return;
+      }
+      if (data.conflicts && data.conflicts.length) {
+        setConflicts({ mode: "pull", paths: data.conflicts });
+        setStatus("error");
+        return;
+      }
+      setConflicts(null);
+      setGhDirty(false);
+      flashStatus("saved");
+      // Reload to reflect pulled file contents.
+      router.refresh();
+      if (typeof window !== "undefined") window.location.reload();
+    } finally {
+      setGhBusy(false);
+    }
   }
 
   function exportCode() {
@@ -374,7 +441,10 @@ export function Workspace({
         return;
       }
       append((prev) => [...prev, { sender: "ai", content: data.reply }]);
-      if (data.code) setCode(data.code);
+      if (data.code) {
+        setCode(data.code);
+        setGhDirty(true);
+      }
       if (data.invalid) {
         setPreviewError({ message: "Generated code failed validation." });
         setStatus("error");
@@ -419,6 +489,7 @@ Fix the error. Return only the corrected complete code in one \`\`\`tsx block. D
       const data = await res.json();
       if (res.ok && data.code && !data.invalid) {
         setCode(data.code);
+        setGhDirty(true);
         setPreviewError(null);
         append((prev) => [...prev, { sender: "ai", content: data.reply }]);
         flashStatus("saved");
@@ -467,10 +538,20 @@ Fix the error. Return only the corrected complete code in one \`\`\`tsx block. D
         onOpenDesign={() => setDesignPanelOpen(true)}
         onOpenTemplates={() => setTemplatesOpen(true)}
         onOpenInspiration={() => setInspOpen(true)}
+        github={{ linked: initialGithubLinked, dirty: ghDirty, busy: ghBusy }}
+        onSync={syncToGithub}
+        onPull={() => pullFromGithub()}
       />
 
       <div className="flex flex-1 overflow-hidden">
-        <FileTree onSaveTemplate={handleSaveTemplate} />
+        <FileTree
+          projectId={projectId}
+          onOpen={(path, content) => {
+            setViewFile({ path, content });
+            setTab("code");
+          }}
+          onSaveTemplate={handleSaveTemplate}
+        />
 
         {/* Developer AI drawer */}
         {devOpen ? (
@@ -562,9 +643,22 @@ Fix the error. Return only the corrected complete code in one \`\`\`tsx block. D
                 )}
               </div>
             ) : (
-              <pre className="h-full overflow-auto rounded-[6px] border border-border bg-surface p-4 font-mono text-[12px] leading-relaxed text-foreground">
-                {code}
-              </pre>
+              <div className="flex h-full flex-col overflow-hidden rounded-[6px] border border-border bg-surface">
+                {viewFile && (
+                  <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
+                    <span className="font-mono text-[11px] text-accent">{viewFile.path}</span>
+                    <button
+                      onClick={() => setViewFile(null)}
+                      className="font-mono text-[10px] text-muted hover:text-foreground"
+                    >
+                      show App.tsx ✕
+                    </button>
+                  </div>
+                )}
+                <pre className="flex-1 overflow-auto p-4 font-mono text-[12px] leading-relaxed text-foreground">
+                  {viewFile ? viewFile.content : code}
+                </pre>
+              </div>
             )}
           </div>
 
@@ -631,6 +725,62 @@ Fix the error. Return only the corrected complete code in one \`\`\`tsx block. D
           onMatchStyle={matchStyle}
           onClose={() => setInspOpen(false)}
         />
+      )}
+
+      {conflicts && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="w-full max-w-md rounded-[8px] border-2 border-error bg-surface p-6 shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
+            <h2 className="serif text-lg italic text-foreground">Merge conflict</h2>
+            <p className="mt-1 font-mono text-[11px] text-muted">
+              {conflicts.mode === "push"
+                ? "Remote has changes — pull first."
+                : "These files changed both locally and on GitHub:"}
+            </p>
+            <div className="my-3 max-h-40 overflow-y-auto rounded-[4px] border border-border bg-background p-2">
+              {conflicts.paths.map((p) => (
+                <div key={p} className="font-mono text-[11px] text-error">
+                  {p}
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end gap-2">
+              {conflicts.mode === "push" ? (
+                <>
+                  <button
+                    onClick={() => setConflicts(null)}
+                    className="rounded-[4px] border border-border bg-surface px-3 py-1.5 font-mono text-[12px] text-muted hover:text-foreground"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      setConflicts(null);
+                      pullFromGithub();
+                    }}
+                    className="btn-grad rounded-[4px] px-3 py-1.5 text-sm font-medium text-foreground"
+                  >
+                    Pull first
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => pullFromGithub("local")}
+                    className="rounded-[4px] border border-border bg-surface px-3 py-1.5 font-mono text-[12px] text-foreground hover:border-accent"
+                  >
+                    Keep local
+                  </button>
+                  <button
+                    onClick={() => pullFromGithub("remote")}
+                    className="btn-grad rounded-[4px] px-3 py-1.5 text-sm font-medium text-foreground"
+                  >
+                    Take remote
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
