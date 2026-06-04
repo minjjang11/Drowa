@@ -248,3 +248,30 @@ create policy inspirations_select on inspirations for select
 drop policy if exists inspirations_write on inspirations;
 create policy inspirations_write on inspirations for all
   using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+
+-- ─────────────────────────────────────────────────────────────
+-- Phase 3-4: Quick actions (built-ins live in code; custom per-user)
+-- ─────────────────────────────────────────────────────────────
+
+create table if not exists quick_actions (
+  id              uuid primary key default gen_random_uuid(),
+  owner_id        uuid references auth.users(id) on delete cascade,
+  label           text not null,
+  icon            text,
+  prompt_template text not null,
+  category        text not null default 'custom',
+  order_index     int not null default 0,
+  is_global       boolean not null default false,
+  created_at      timestamptz not null default now()
+);
+
+create index if not exists idx_quick_actions_owner on quick_actions(owner_id);
+
+alter table quick_actions enable row level security;
+
+drop policy if exists quick_actions_select on quick_actions;
+create policy quick_actions_select on quick_actions for select
+  using (is_global = true or owner_id = auth.uid());
+drop policy if exists quick_actions_write on quick_actions;
+create policy quick_actions_write on quick_actions for all
+  using (owner_id = auth.uid()) with check (owner_id = auth.uid());

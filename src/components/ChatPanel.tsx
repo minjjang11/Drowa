@@ -2,6 +2,8 @@
 
 import { useState, useRef, useEffect } from "react";
 import type { AiRole } from "@/lib/types";
+import { QuickActionsBar } from "./QuickActionsBar";
+import type { QuickAction } from "@/lib/quickActions";
 
 export interface ChatMessage {
   sender: "user" | "ai";
@@ -17,6 +19,9 @@ export function ChatPanel({
   suggestions,
   onSuggestion,
   prefill,
+  quickActions,
+  onQuickAction,
+  onAddQuickAction,
 }: {
   role: AiRole;
   title: string;
@@ -27,6 +32,9 @@ export function ChatPanel({
   onSuggestion?: (s: string) => void;
   /** Programmatic input fill (Apply Style). Bump `n` to re-apply the same text. */
   prefill?: { text: string; n: number };
+  quickActions?: QuickAction[];
+  onQuickAction?: (promptTemplate: string) => void;
+  onAddQuickAction?: () => void;
 }) {
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -103,6 +111,15 @@ export function ChatPanel({
           </div>
         )}
       </div>
+
+      {quickActions && quickActions.length > 0 && onQuickAction && onAddQuickAction && (
+        <QuickActionsBar
+          actions={quickActions}
+          busy={busy}
+          onFire={onQuickAction}
+          onAdd={onAddQuickAction}
+        />
+      )}
 
       {suggestions && suggestions.length > 0 && (
         <div className="shrink-0 border-t border-border px-2 pt-2">

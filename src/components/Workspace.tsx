@@ -22,6 +22,7 @@ import {
   MATCH_STYLE_PROMPT,
   type Inspiration,
 } from "@/lib/inspirations";
+import { BUILTIN_ACTIONS, type QuickAction } from "@/lib/quickActions";
 import type {
   AiRole,
   DesignTokens,
@@ -79,6 +80,7 @@ export function Workspace({
   const [inspOpen, setInspOpen] = useState(false);
   const [refineHints, setRefineHints] = useState<string[] | null>(null);
   const [designPrefill, setDesignPrefill] = useState<{ text: string; n: number }>({ text: "", n: 0 });
+  const [customActions, setCustomActions] = useState<QuickAction[]>([]);
   const tokenSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [dev, setDev] = useState<ChatMessage[]>(initialDev);
   const [design, setDesign] = useState<ChatMessage[]>(initialDesign);
@@ -204,6 +206,59 @@ export function Workspace({
       .eq("project_id", projectId);
     flashStatus(error ? "error" : "saved");
   }
+
+  // Load the user's custom quick actions once.
+  const loadActions = useCallback(async () => {
+    const supabase = createClient();
+    const { data } = await supabase
+      .from("quick_actions")
+      .select("id, label, icon, prompt_template, category")
+      .eq("is_global", false)
+      .order("order_index", { ascending: true });
+    if (data) {
+      setCustomActions(
+        data.map((r) => ({
+          id: r.id as string,
+          label: r.label as string,
+          icon: (r.icon as string) ?? "⭐",
+          promptTemplate: r.prompt_template as string,
+          category: "custom",
+        })),
+      );
+    }
+  }, []);
+
+  useEffect(() => {
+    loadActions();
+  }, [loadActions]);
+
+  async function handleAddQuickAction() {
+    const label = window.prompt("Action label? (e.g. Make it playful)");
+    if (!label) return;
+    const promptTemplate = window.prompt("Prompt sent to the AI when clicked?");
+    if (!promptTemplate) return;
+    const supabase = createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+    const { error } = await supabase.from("quick_actions").insert({
+      owner_id: user.id,
+      label: label.trim(),
+      icon: "⭐",
+      prompt_template: promptTemplate.trim(),
+      category: "custom",
+      is_global: false,
+    });
+    if (!error) {
+      flashStatus("saved");
+      loadActions();
+    } else {
+      flashStatus("error");
+    }
+  }
+
+  const quickActions = [...BUILTIN_ACTIONS, ...customActions];
 
   // Edit tokens locally; debounce persist to design_tokens + sync into context.md.
   function handleTokensChange(next: DesignTokens) {
@@ -366,6 +421,9 @@ export function Workspace({
                 onSend={(p) => send("dev_ai", p)}
                 suggestions={refineHints ?? undefined}
                 onSuggestion={(s) => send("dev_ai", s)}
+                quickActions={quickActions}
+                onQuickAction={(t) => send("dev_ai", t)}
+                onAddQuickAction={handleAddQuickAction}
               />
             </div>
             <CollapseTab side="left" onClick={() => setDevOpen(false)} />
@@ -437,6 +495,9 @@ export function Workspace({
                 suggestions={refineHints ?? undefined}
                 onSuggestion={(s) => send("design_ai", s)}
                 prefill={designPrefill}
+                quickActions={quickActions}
+                onQuickAction={(t) => send("design_ai", t)}
+                onAddQuickAction={handleAddQuickAction}
               />
             </div>
             <CollapseTab side="right" onClick={() => setDesignOpen(false)} />
