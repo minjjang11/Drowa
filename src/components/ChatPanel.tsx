@@ -22,6 +22,8 @@ export function ChatPanel({
   quickActions,
   onQuickAction,
   onAddQuickAction,
+  errorCard,
+  onFix,
 }: {
   role: AiRole;
   title: string;
@@ -35,6 +37,8 @@ export function ChatPanel({
   quickActions?: QuickAction[];
   onQuickAction?: (promptTemplate: string) => void;
   onAddQuickAction?: () => void;
+  errorCard?: { message: string } | null;
+  onFix?: () => void;
 }) {
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -111,6 +115,26 @@ export function ChatPanel({
           </div>
         )}
       </div>
+
+      {errorCard && (
+        <div className="shrink-0 border-t border-border bg-surface px-2 pt-2">
+          <div className="rounded-[4px] border-l-2 border-error bg-surface-elevated px-2.5 py-2">
+            <p className="font-mono text-[10px] font-semibold tracking-wider text-error">
+              [{tag}] Error detected
+            </p>
+            <p className="mt-1 line-clamp-2 font-mono text-[11px] leading-snug text-foreground">
+              {errorCard.message}
+            </p>
+            <button
+              onClick={onFix}
+              disabled={busy}
+              className="mt-2 rounded-[4px] bg-accent px-2.5 py-1 font-mono text-[10px] font-medium text-[#0d0d0d] hover:opacity-90 disabled:opacity-50"
+            >
+              Fix automatically ↗
+            </button>
+          </div>
+        </div>
+      )}
 
       {quickActions && quickActions.length > 0 && onQuickAction && onAddQuickAction && (
         <QuickActionsBar

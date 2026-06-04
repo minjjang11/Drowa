@@ -137,3 +137,15 @@ export function extractCode(text: string): string | null {
   const match = text.match(/```(?:tsx|jsx|ts|js|react)?\s*\n([\s\S]*?)```/);
   return match ? match[1].trim() : null;
 }
+
+/** Lightweight pre-render guard: catches obviously-broken generations. */
+export function validateGeneratedCode(code: string): { valid: boolean; reason?: string } {
+  const c = code.trim();
+  if (c.length < 20) return { valid: false, reason: "empty or too short" };
+  if (!/export\s+default/.test(c) && !/return\s*\(/.test(c) && !/<[a-zA-Z]/.test(c))
+    return { valid: false, reason: "no default export or JSX found" };
+  const count = (re: RegExp) => (c.match(re) ?? []).length;
+  if (count(/\{/g) !== count(/\}/g)) return { valid: false, reason: "unbalanced braces" };
+  if (count(/\(/g) !== count(/\)/g)) return { valid: false, reason: "unbalanced parentheses" };
+  return { valid: true };
+}

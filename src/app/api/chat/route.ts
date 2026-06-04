@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { claude, MODEL, buildRequest, extractCode } from "@/lib/claude";
+import { claude, MODEL, buildRequest, extractCode, validateGeneratedCode } from "@/lib/claude";
 import { DEFAULT_TOKENS } from "@/lib/types";
 import type { AiRole, DesignTokens, FileRow, Message } from "@/lib/types";
 
@@ -75,24 +75,48 @@ export async function POST(req: Request) {
     image: imagePayload,
   });
 
-  let reply: string;
-  try {
+  async function ask(msgs: typeof messages): Promise<string> {
     const res = await claude.messages.create({
       model: MODEL,
       max_tokens: 8000,
       system,
-      messages,
+      messages: msgs,
     });
-    reply = res.content
+    return res.content
       .filter((b) => b.type === "text")
       .map((b) => (b as { text: string }).text)
       .join("\n");
+  }
+
+  let reply: string;
+  try {
+    reply = await ask(messages);
+
+    // Generation quality guard: validate the code block, auto-retry once.
+    let code0 = extractCode(reply);
+    if (code0) {
+      const check = validateGeneratedCode(code0);
+      if (!check.valid) {
+        const retryMessages = [
+          ...messages,
+          { role: "assistant" as const, content: reply },
+          {
+            role: "user" as const,
+            content: `Your previous response was not valid React/HTML code (${check.reason}). Return only the corrected complete code block in one \`\`\`tsx block, nothing else.`,
+          },
+        ];
+        const retryReply = await ask(retryMessages);
+        const code1 = extractCode(retryReply);
+        if (code1 && validateGeneratedCode(code1).valid) reply = retryReply;
+      }
+    }
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Claude request failed";
     return NextResponse.json({ error: msg }, { status: 502 });
   }
 
   const code = extractCode(reply);
+  const codeValid = code ? validateGeneratedCode(code).valid : true;
 
   // Persist the user turn and the AI turn (same channel).
   await supabase.from("messages").insert([
@@ -123,5 +147,5 @@ export async function POST(req: Request) {
       .eq("project_id", projectId);
   }
 
-  return NextResponse.json({ reply, code: code ?? null });
+  return NextResponse.json({ reply, code: code ?? null, invalid: !codeValid });
 }

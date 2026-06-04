@@ -81,6 +81,8 @@ export function Workspace({
   const [refineHints, setRefineHints] = useState<string[] | null>(null);
   const [designPrefill, setDesignPrefill] = useState<{ text: string; n: number }>({ text: "", n: 0 });
   const [customActions, setCustomActions] = useState<QuickAction[]>([]);
+  const [previewError, setPreviewError] = useState<{ message: string; stack?: string } | null>(null);
+  const [lastRole, setLastRole] = useState<AiRole>("dev_ai");
   const tokenSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [dev, setDev] = useState<ChatMessage[]>(initialDev);
   const [design, setDesign] = useState<ChatMessage[]>(initialDesign);
@@ -351,12 +353,14 @@ export function Workspace({
     send("design_ai", MATCH_STYLE_PROMPT, dataUrl);
   }
 
-  async function send(role: AiRole, prompt: string, image?: string) {
+  async function send(role: AiRole, prompt: string, image?: string, displayAs?: string) {
     const append = role === "dev_ai" ? setDev : setDesign;
-    append((prev) => [...prev, { sender: "user", content: image ? `🖼️ ${prompt}` : prompt }]);
+    append((prev) => [...prev, { sender: "user", content: displayAs ?? (image ? `🖼️ ${prompt}` : prompt) }]);
     setBusy(role);
+    setLastRole(role);
     setStatus("generating");
     setRefineHints(null);
+    setPreviewError(null);
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
@@ -371,10 +375,69 @@ export function Workspace({
       }
       append((prev) => [...prev, { sender: "ai", content: data.reply }]);
       if (data.code) setCode(data.code);
-      flashStatus("saved");
+      if (data.invalid) {
+        setPreviewError({ message: "Generated code failed validation." });
+        setStatus("error");
+      } else {
+        flashStatus("saved");
+      }
     } catch {
       append((prev) => [...prev, { sender: "ai", content: "⚠️ Network error" }]);
       flashStatus("error");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // A render error surfaced from inside the preview iframe.
+  const handlePreviewError = useCallback((err: { message: string; stack?: string }) => {
+    if (!err.message) return;
+    setPreviewError(err);
+    setStatus("error");
+  }, []);
+
+  // One-click auto-fix: send the error + current code to the AI, apply the result.
+  async function fixError() {
+    if (!previewError) return;
+    const role = lastRole;
+    const append = role === "dev_ai" ? setDev : setDesign;
+    const fixPrompt = `The following error occurred when rendering the UI:
+${previewError.message}
+${(previewError.stack ?? "").slice(0, 600)}
+
+Fix the error. Return only the corrected complete code in one \`\`\`tsx block. Do not change any functionality or visual design. Code only.`;
+
+    append((prev) => [...prev, { sender: "user", content: "🔧 Fix this error automatically" }]);
+    setBusy(role);
+    setStatus("generating");
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, role, prompt: fixPrompt }),
+      });
+      const data = await res.json();
+      if (res.ok && data.code && !data.invalid) {
+        setCode(data.code);
+        setPreviewError(null);
+        append((prev) => [...prev, { sender: "ai", content: data.reply }]);
+        flashStatus("saved");
+
+        const supabase = createClient();
+        const stamp = new Date().toISOString();
+        const short = previewError.message.slice(0, 120);
+        const nextMd = `${contextMd.trim()}\n\n## ${stamp} — Auto-fix applied\nError: ${short}\nResolution: AI-generated fix applied successfully`;
+        setContextMd(nextMd);
+        setContextUpdatedAt(stamp);
+        await supabase.from("context_md").update({ content: nextMd }).eq("project_id", projectId);
+      } else {
+        append((prev) => [...prev, { sender: "ai", content: data.reply ?? "⚠️ Fix failed" }]);
+        setStatus("error");
+        setDesignPrefill((p) => ({ text: "Still broken — here's what I want: ", n: p.n + 1 }));
+      }
+    } catch {
+      append((prev) => [...prev, { sender: "ai", content: "⚠️ Network error" }]);
+      setStatus("error");
     } finally {
       setBusy(null);
     }
@@ -424,6 +487,8 @@ export function Workspace({
                 quickActions={quickActions}
                 onQuickAction={(t) => send("dev_ai", t)}
                 onAddQuickAction={handleAddQuickAction}
+                errorCard={previewError && lastRole === "dev_ai" ? previewError : null}
+                onFix={fixError}
               />
             </div>
             <CollapseTab side="left" onClick={() => setDevOpen(false)} />
@@ -453,7 +518,9 @@ export function Workspace({
           <div className="flex-1 overflow-auto p-3">
             {tab === "preview" ? (
               <div
-                className="grad-border relative mx-auto h-full overflow-hidden rounded-[6px] transition-[max-width] duration-150"
+                className={`relative mx-auto h-full overflow-hidden rounded-[6px] transition-[max-width] duration-150 ${
+                  previewError ? "border-2 border-error" : "grad-border"
+                }`}
                 style={{ maxWidth: DEVICE_WIDTH[device] }}
               >
                 <Preview
@@ -463,8 +530,36 @@ export function Workspace({
                   editMode={editMode}
                   onSelect={setSelection}
                   onMove={handleMove}
+                  onError={handlePreviewError}
                 />
                 <div className="vignette pointer-events-none absolute inset-0 rounded-[6px]" />
+
+                {previewError && (
+                  <div className="absolute inset-x-0 bottom-0 z-10 border-t border-error bg-[#0d0d0d]/95 p-4 backdrop-blur-sm">
+                    <p className="mb-1 font-mono text-[10px] uppercase tracking-wider text-error">Render error</p>
+                    <pre className="mb-3 line-clamp-2 max-h-10 overflow-hidden font-mono text-[11px] leading-snug text-foreground">
+                      {previewError.message}
+                    </pre>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={fixError}
+                        disabled={busy !== null}
+                        className="rounded-[4px] bg-accent px-3 py-1.5 font-mono text-[11px] font-medium text-[#0d0d0d] transition-opacity hover:opacity-90 disabled:opacity-50"
+                      >
+                        Fix automatically
+                      </button>
+                      <button
+                        onClick={() => {
+                          setPreviewError(null);
+                          setStatus("ready");
+                        }}
+                        className="rounded-[4px] px-3 py-1.5 font-mono text-[11px] text-muted transition-colors hover:text-foreground"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <pre className="h-full overflow-auto rounded-[6px] border border-border bg-surface p-4 font-mono text-[12px] leading-relaxed text-foreground">
@@ -498,6 +593,8 @@ export function Workspace({
                 quickActions={quickActions}
                 onQuickAction={(t) => send("design_ai", t)}
                 onAddQuickAction={handleAddQuickAction}
+                errorCard={previewError && lastRole === "design_ai" ? previewError : null}
+                onFix={fixError}
               />
             </div>
             <CollapseTab side="right" onClick={() => setDesignOpen(false)} />

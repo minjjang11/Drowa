@@ -24,6 +24,8 @@ interface PreviewProps {
   onSelect: (sel: Selection | null) => void;
   /** Drag drop: absolute translate to persist for the element. */
   onMove: (id: string, transform: string) => void;
+  /** Render/runtime error captured inside the iframe. */
+  onError?: (err: { message: string; stack?: string; line?: number }) => void;
 }
 
 /**
@@ -35,7 +37,7 @@ interface PreviewProps {
  * source and use a namespaced "drowa:" message protocol.
  */
 export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
-  { code, overrides, editMode, onSelect, onMove },
+  { code, overrides, editMode, onSelect, onMove, onError },
   ref,
 ) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -76,7 +78,8 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
       const data = e.data as
         | { type: "drowa:ready" }
         | { type: "drowa:selected"; payload: Selection }
-        | { type: "drowa:moved"; id: string; transform: string };
+        | { type: "drowa:moved"; id: string; transform: string }
+        | { type: "drowa:error"; message: string; stack?: string; line?: number };
       if (!data || typeof data.type !== "string") return;
 
       switch (data.type) {
@@ -91,11 +94,14 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
         case "drowa:moved":
           onMove(data.id, data.transform);
           break;
+        case "drowa:error":
+          onError?.({ message: data.message, stack: data.stack, line: data.line });
+          break;
       }
     }
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [onSelect, onMove]);
+  }, [onSelect, onMove, onError]);
 
   return (
     <iframe
@@ -134,14 +140,35 @@ function buildSrcDoc(code: string): string {
   <body>
     <div id="root"></div>
     <script type="text/babel" data-presets="react,typescript">
+      function __report(err) {
+        parent.postMessage({
+          type: "drowa:error",
+          message: String(err && err.message ? err.message : err),
+          stack: String(err && err.stack ? err.stack : ""),
+        }, "*");
+      }
+      class __ErrorBoundary extends React.Component {
+        constructor(p) { super(p); this.state = { err: null }; }
+        static getDerivedStateFromError(err) { return { err }; }
+        componentDidCatch(err) { __report(err); }
+        render() {
+          if (this.state.err) {
+            return React.createElement("pre", { style: { color: "#ef4444", padding: "16px", whiteSpace: "pre-wrap", font: "13px ui-monospace,monospace" } }, String(this.state.err.stack || this.state.err));
+          }
+          return this.props.children;
+        }
+      }
       try {
         ${normalized}
         const Root = typeof App !== "undefined" ? App : (typeof __Default !== "undefined" ? __Default : null);
         if (!Root) throw new Error("No component exported. Export a default 'App' component.");
-        ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(Root));
+        ReactDOM.createRoot(document.getElementById("root")).render(
+          React.createElement(__ErrorBoundary, null, React.createElement(Root))
+        );
       } catch (err) {
+        __report(err);
         document.getElementById("root").innerHTML =
-          '<pre style="color:#b00;padding:16px;white-space:pre-wrap;font:13px ui-monospace,monospace">' +
+          '<pre style="color:#ef4444;padding:16px;white-space:pre-wrap;font:13px ui-monospace,monospace">' +
           String(err && err.stack ? err.stack : err) + '</pre>';
       }
     </script>
@@ -153,6 +180,15 @@ function buildSrcDoc(code: string): string {
 /** Minimal in-iframe visual editor: ids, click-select, drag-move, style apply. */
 const EDITOR_SCRIPT = `<script>
 (function () {
+  // Layer 1 — runtime + promise errors inside the preview.
+  window.addEventListener("error", function (e) {
+    parent.postMessage({ type: "drowa:error", message: e.message, stack: (e.error && e.error.stack) || "", line: e.lineno }, "*");
+  });
+  window.addEventListener("unhandledrejection", function (e) {
+    var r = e.reason || {};
+    parent.postMessage({ type: "drowa:error", message: String(r.message || r), stack: String(r.stack || "") }, "*");
+  });
+
   var STYLE_PROPS = ["color","backgroundColor","fontSize","fontFamily",
     "paddingTop","paddingRight","paddingBottom","paddingLeft",
     "marginTop","marginRight","marginBottom","marginLeft"];
