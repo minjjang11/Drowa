@@ -5,6 +5,11 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Preview, type PreviewHandle } from "./Preview";
 import { PropertyPanel } from "./PropertyPanel";
+import { CodePanel } from "./CodePanel";
+import { VersionHistoryPanel } from "./VersionHistoryPanel";
+import { DiffModal } from "./DiffModal";
+import { extractJsxBlock, insertAfterBlock, removeBlock } from "@/lib/jsxTransform";
+import { relativeTime } from "@/lib/versionMeta";
 import { ChatPanel, type ChatMessage } from "./ChatPanel";
 import { Toolbar } from "./Toolbar";
 import { FileTree } from "./FileTree";
@@ -32,6 +37,9 @@ import type {
   Selection,
   Status,
   StyleMap,
+  VersionRow,
+  VersionSnapshot,
+  VersionTrigger,
 } from "@/lib/types";
 
 /** Replace or append the ## Design System block in context.md so both AIs always see tokens. */
@@ -61,6 +69,7 @@ export function Workspace({
   initialGithubLinked,
   initialDev,
   initialDesign,
+  initialPrompt,
 }: {
   projectId: string;
   projectName: string;
@@ -72,6 +81,8 @@ export function Workspace({
   initialGithubLinked: boolean;
   initialDev: ChatMessage[];
   initialDesign: ChatMessage[];
+  /** Home "Start from Scratch" seed — fired once at the Developer AI on mount. */
+  initialPrompt?: string | null;
 }) {
   const router = useRouter();
   const [code, setCode] = useState(initialCode);
@@ -84,6 +95,7 @@ export function Workspace({
   const [inspOpen, setInspOpen] = useState(false);
   const [refineHints, setRefineHints] = useState<string[] | null>(null);
   const [designPrefill, setDesignPrefill] = useState<{ text: string; n: number }>({ text: "", n: 0 });
+  const [devPrefill, setDevPrefill] = useState<{ text: string; n: number }>({ text: "", n: 0 });
   const [customActions, setCustomActions] = useState<QuickAction[]>([]);
   const [previewError, setPreviewError] = useState<{ message: string; stack?: string } | null>(null);
   const [lastRole, setLastRole] = useState<AiRole>("dev_ai");
@@ -91,6 +103,16 @@ export function Workspace({
   const [ghBusy, setGhBusy] = useState(false);
   const [conflicts, setConflicts] = useState<{ mode: "push" | "pull"; paths: string[] } | null>(null);
   const [viewFile, setViewFile] = useState<{ path: string; content: string } | null>(null);
+  // ── Phase 3-8: version history ──
+  const [versionsOpen, setVersionsOpen] = useState(false);
+  const [versionsRefresh, setVersionsRefresh] = useState(0);
+  const [saveVersionOpen, setSaveVersionOpen] = useState(false);
+  const [versionLabel, setVersionLabel] = useState("");
+  const [previewVersion, setPreviewVersion] = useState<{ v: VersionRow; snapshot: VersionSnapshot } | null>(null);
+  const [restoreTarget, setRestoreTarget] = useState<VersionRow | null>(null);
+  const [diffTarget, setDiffTarget] = useState<{ v: VersionRow; snapshot: VersionSnapshot } | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tokenSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [dev, setDev] = useState<ChatMessage[]>(initialDev);
   const [design, setDesign] = useState<ChatMessage[]>(initialDesign);
@@ -108,6 +130,7 @@ export function Workspace({
   const previewRef = useRef<PreviewHandle>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const statusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const codeEditTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function flashStatus(s: Status) {
     setStatus(s);
@@ -115,6 +138,51 @@ export function Workspace({
     if (s === "saved") {
       statusTimer.current = setTimeout(() => setStatus("ready"), 1500);
     }
+  }
+
+  function showToast(msg: string) {
+    setToast(msg);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 2500);
+  }
+
+  // ── Phase 3-8: version history ───────────────────────────────────
+  // Fire-and-wait snapshot of the whole project (server reads files + context).
+  async function snapshotVersion(label: string | null, trigger: VersionTrigger) {
+    await fetch("/api/versions/snapshot", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, label, trigger }),
+    });
+  }
+
+  async function saveVersion() {
+    const label = versionLabel.trim();
+    setSaveVersionOpen(false);
+    setVersionLabel("");
+    await snapshotVersion(label || null, "manual");
+    setVersionsRefresh((n) => n + 1);
+    showToast("Version saved");
+  }
+
+  async function doRestore(v: VersionRow) {
+    setRestoreTarget(null);
+    setPreviewVersion(null);
+    setStatus("generating");
+    const res = await fetch("/api/versions/restore", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, versionId: v.id }),
+    });
+    if (!res.ok) {
+      flashStatus("error");
+      return;
+    }
+    showToast(`Restored to ${v.label}`);
+    setVersionsRefresh((n) => n + 1);
+    // Reload to reflect every restored file + context.
+    router.refresh();
+    if (typeof window !== "undefined") window.location.reload();
   }
 
   const persistOverrides = useCallback(
@@ -206,6 +274,107 @@ export function Workspace({
     });
   }
 
+  // ── Phase 3-7: Visual ↔ Code linking ─────────────────────────────
+  // Persist App.tsx (after a source-level element op) + mark dirty for GitHub.
+  async function persistApp(next: string) {
+    setCode(next);
+    setGhDirty(true);
+    const supabase = createClient();
+    const { error } = await supabase.from("files").upsert(
+      { project_id: projectId, path: "App.tsx", content: next },
+      { onConflict: "project_id,path" },
+    );
+    flashStatus(error ? "error" : "saved");
+  }
+
+  // Manual Monaco-style edit in the code panel: debounced autosave + live re-render.
+  function handleCodeEdit(next: string) {
+    setCode(next);
+    setGhDirty(true);
+    if (codeEditTimer.current) clearTimeout(codeEditTimer.current);
+    codeEditTimer.current = setTimeout(async () => {
+      const supabase = createClient();
+      const { error } = await supabase.from("files").upsert(
+        { project_id: projectId, path: "App.tsx", content: next },
+        { onConflict: "project_id,path" },
+      );
+      flashStatus(error ? "error" : "saved");
+    }, 500);
+  }
+
+  // §3 Duplicate — clone the selected element's JSX block in place.
+  function duplicateElement() {
+    if (!selection?.line) return;
+    const block = extractJsxBlock(code, selection.line);
+    if (!block) return;
+    persistApp(insertAfterBlock(code, block, block.block));
+  }
+
+  // §3 Delete — remove the element from source + log it to context.md.
+  async function deleteElement() {
+    if (!selection?.line) return;
+    const block = extractJsxBlock(code, selection.line);
+    if (!block) return;
+    const next = removeBlock(code, block);
+    const deleted = selection;
+    setSelection(null);
+    previewRef.current?.clearSelection();
+    setCode(next);
+    setGhDirty(true);
+
+    const supabase = createClient();
+    const stamp = new Date().toISOString();
+    const nextMd = `${contextMd.trim()}\n\n## ${stamp} — Element deleted: ${deleted.tag} line ${deleted.line}`;
+    setContextMd(nextMd);
+    setContextUpdatedAt(stamp);
+    const [{ error: e1 }, { error: e2 }] = await Promise.all([
+      supabase.from("files").upsert(
+        { project_id: projectId, path: "App.tsx", content: next },
+        { onConflict: "project_id,path" },
+      ),
+      supabase.from("context_md").update({ content: nextMd }).eq("project_id", projectId),
+    ]);
+    flashStatus(e1 || e2 ? "error" : "saved");
+  }
+
+  // §3 Add similar — AI clones the element into a new, on-system variant.
+  async function addSimilarElement() {
+    if (!selection?.line) return;
+    const block = extractJsxBlock(code, selection.line);
+    if (!block) return;
+    setStatus("generating");
+    try {
+      const res = await fetch("/api/element/similar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, block: block.block }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.code) {
+        flashStatus("error");
+        return;
+      }
+      persistApp(insertAfterBlock(code, block, data.code));
+    } catch {
+      flashStatus("error");
+    }
+  }
+
+  // §3 Edit — focus the Developer chat with element context pre-filled.
+  function editElement() {
+    if (!selection) return;
+    const s = selection.styles;
+    const parts: string[] = [];
+    if (s.color) parts.push(`color ${s.color}`);
+    if (s.fontSize) parts.push(`font ${s.fontSize}`);
+    if (s.fontFamily) parts.push(`family ${s.fontFamily.split(",")[0].replace(/["']/g, "")}`);
+    if (s.paddingTop) parts.push(`padding ${s.paddingTop}`);
+    if (s.marginTop) parts.push(`margin ${s.marginTop}`);
+    const text = `Edit the ${selection.tag} element on line ${selection.line}:\nCurrent styles: ${parts.join(", ") || "n/a"}\n`;
+    setDevPrefill((p) => ({ text, n: p.n + 1 }));
+    setDevOpen(true);
+  }
+
   async function saveContext(next: string) {
     setContextMd(next);
     setContextUpdatedAt(new Date().toISOString());
@@ -241,6 +410,16 @@ export function Workspace({
   useEffect(() => {
     loadActions();
   }, [loadActions]);
+
+  // Home "Start from Scratch": fire the seed prompt at the Developer AI once.
+  const seedFired = useRef(false);
+  useEffect(() => {
+    if (seedFired.current || !initialPrompt) return;
+    seedFired.current = true;
+    send("dev_ai", initialPrompt);
+    router.replace(`/project/${projectId}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialPrompt]);
 
   async function handleAddQuickAction() {
     const label = window.prompt("Action label? (e.g. Make it playful)");
@@ -292,6 +471,10 @@ export function Workspace({
 
   // Insert a template: compose into the file, persist, log to context.md, offer refine prompts.
   async function handleInsertTemplate(t: Template) {
+    // 3-8: snapshot pre-insert state.
+    await snapshotVersion(null, "template_insert");
+    setVersionsRefresh((n) => n + 1);
+
     const next = insertTemplate(code, t.code);
     setCode(next);
     setGhDirty(true);
@@ -343,6 +526,8 @@ export function Workspace({
     if (message === undefined) return;
     setGhBusy(true);
     setStatus("generating");
+    await snapshotVersion(null, "github_sync");
+    setVersionsRefresh((n) => n + 1);
     try {
       const res = await fetch("/api/github/push", {
         method: "POST",
@@ -367,6 +552,8 @@ export function Workspace({
   async function pullFromGithub(resolve?: "remote" | "local") {
     setGhBusy(true);
     setStatus("generating");
+    await snapshotVersion(null, "github_sync");
+    setVersionsRefresh((n) => n + 1);
     try {
       const res = await fetch("/api/github/pull", {
         method: "POST",
@@ -444,6 +631,7 @@ export function Workspace({
       if (data.code) {
         setCode(data.code);
         setGhDirty(true);
+        setVersionsRefresh((n) => n + 1); // server snapshotted pre-change state
       }
       if (data.invalid) {
         setPreviewError({ message: "Generated code failed validation." });
@@ -484,12 +672,13 @@ Fix the error. Return only the corrected complete code in one \`\`\`tsx block. D
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, role, prompt: fixPrompt }),
+        body: JSON.stringify({ projectId, role, prompt: fixPrompt, trigger: "auto_fix" }),
       });
       const data = await res.json();
       if (res.ok && data.code && !data.invalid) {
         setCode(data.code);
         setGhDirty(true);
+        setVersionsRefresh((n) => n + 1);
         setPreviewError(null);
         append((prev) => [...prev, { sender: "ai", content: data.reply }]);
         flashStatus("saved");
@@ -538,6 +727,8 @@ Fix the error. Return only the corrected complete code in one \`\`\`tsx block. D
         onOpenDesign={() => setDesignPanelOpen(true)}
         onOpenTemplates={() => setTemplatesOpen(true)}
         onOpenInspiration={() => setInspOpen(true)}
+        onOpenVersions={() => setVersionsOpen(true)}
+        onSaveVersion={() => setSaveVersionOpen(true)}
         github={{ linked: initialGithubLinked, dirty: ghDirty, busy: ghBusy }}
         onSync={syncToGithub}
         onPull={() => pullFromGithub()}
@@ -565,6 +756,7 @@ Fix the error. Return only the corrected complete code in one \`\`\`tsx block. D
                 onSend={(p) => send("dev_ai", p)}
                 suggestions={refineHints ?? undefined}
                 onSuggestion={(s) => send("dev_ai", s)}
+                prefill={devPrefill}
                 quickActions={quickActions}
                 onQuickAction={(t) => send("dev_ai", t)}
                 onAddQuickAction={handleAddQuickAction}
@@ -596,6 +788,29 @@ Fix the error. Return only the corrected complete code in one \`\`\`tsx block. D
             </button>
           </div>
 
+          {/* §5 Previewing-a-version banner. */}
+          {previewVersion && (
+            <div className="flex shrink-0 items-center justify-between bg-accent px-3 py-1.5 text-[#0d0d0d]">
+              <span className="font-mono text-[11px]">
+                Previewing: <span className="font-semibold">{previewVersion.v.label}</span> — {relativeTime(previewVersion.v.created_at)}
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setRestoreTarget(previewVersion.v)}
+                  className="rounded-[4px] bg-[#0d0d0d] px-2.5 py-1 font-mono text-[10px] font-medium text-accent hover:opacity-90"
+                >
+                  Restore this
+                </button>
+                <button
+                  onClick={() => setPreviewVersion(null)}
+                  className="rounded-[4px] px-2.5 py-1 font-mono text-[10px] text-[#0d0d0d] hover:opacity-70"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="flex-1 overflow-auto p-3">
             {tab === "preview" ? (
               <div
@@ -606,14 +821,25 @@ Fix the error. Return only the corrected complete code in one \`\`\`tsx block. D
               >
                 <Preview
                   ref={previewRef}
-                  code={code}
+                  code={previewVersion ? (previewVersion.snapshot.files.find((f) => f.path === "App.tsx")?.content ?? "") : code}
                   overrides={overrides}
-                  editMode={editMode}
+                  editMode={editMode && !previewVersion}
                   onSelect={setSelection}
                   onMove={handleMove}
                   onError={handlePreviewError}
                 />
                 <div className="vignette pointer-events-none absolute inset-0 rounded-[6px]" />
+
+                {/* §3 Floating toolbar — anchored above the selected element. */}
+                {editMode && selection?.rect && (
+                  <FloatingToolbar
+                    rect={selection.rect}
+                    onDuplicate={duplicateElement}
+                    onEdit={editElement}
+                    onDelete={deleteElement}
+                    onAddSimilar={addSimilarElement}
+                  />
+                )}
 
                 {previewError && (
                   <div className="absolute inset-x-0 bottom-0 z-10 border-t border-error bg-[#0d0d0d]/95 p-4 backdrop-blur-sm">
@@ -655,9 +881,12 @@ Fix the error. Return only the corrected complete code in one \`\`\`tsx block. D
                     </button>
                   </div>
                 )}
-                <pre className="flex-1 overflow-auto p-4 font-mono text-[12px] leading-relaxed text-foreground">
-                  {viewFile ? viewFile.content : code}
-                </pre>
+                <CodePanel
+                  code={viewFile ? viewFile.content : code}
+                  activeLine={viewFile ? undefined : selection?.line}
+                  editable={!viewFile}
+                  onChange={handleCodeEdit}
+                />
               </div>
             )}
           </div>
@@ -667,6 +896,7 @@ Fix the error. Return only the corrected complete code in one \`\`\`tsx block. D
               selection={selection}
               transform={selection ? overrides[selection.id]?.transform : undefined}
               onChange={handleStyleChange}
+              onSelectPath={(id) => previewRef.current?.selectById(id)}
             />
           )}
         </main>
@@ -725,6 +955,99 @@ Fix the error. Return only the corrected complete code in one \`\`\`tsx block. D
           onMatchStyle={matchStyle}
           onClose={() => setInspOpen(false)}
         />
+      )}
+
+      {/* §4 Version history panel */}
+      {versionsOpen && (
+        <VersionHistoryPanel
+          projectId={projectId}
+          refreshKey={versionsRefresh}
+          onClose={() => setVersionsOpen(false)}
+          onPreview={(v, snapshot) => {
+            setPreviewVersion({ v, snapshot });
+            setTab("preview");
+          }}
+          onRestore={(v) => setRestoreTarget(v)}
+          onDiff={(v, snapshot) => setDiffTarget({ v, snapshot })}
+          onSaveVersion={() => setSaveVersionOpen(true)}
+        />
+      )}
+
+      {/* §3 Manual "Save version" modal */}
+      {saveVersionOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="grad-border w-full max-w-sm rounded-[8px] bg-surface p-5 shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
+            <h2 className="serif text-lg italic text-foreground">Save version</h2>
+            <input
+              autoFocus
+              value={versionLabel}
+              onChange={(e) => setVersionLabel(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && saveVersion()}
+              placeholder="Before major redesign"
+              className="input-dark mt-3 w-full rounded-[4px] px-2.5 py-2 font-mono text-[12px]"
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setSaveVersionOpen(false);
+                  setVersionLabel("");
+                }}
+                className="rounded-[4px] px-3 py-1.5 font-mono text-[12px] text-muted hover:text-foreground"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveVersion}
+                className="btn-grad rounded-[4px] px-3 py-1.5 text-sm font-medium text-foreground"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* §6 Restore confirmation */}
+      {restoreTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="grad-border w-full max-w-md rounded-[8px] bg-surface p-6 shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
+            <h2 className="serif text-lg italic text-foreground">Restore to {restoreTarget.label}?</h2>
+            <p className="mt-2 font-mono text-[11px] leading-relaxed text-muted">
+              Your current work will be saved as a version first. This cannot be undone.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setRestoreTarget(null)}
+                className="rounded-[4px] px-3 py-1.5 font-mono text-[12px] text-muted hover:text-foreground"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => doRestore(restoreTarget)}
+                className="rounded-[4px] bg-accent px-3 py-1.5 font-mono text-[12px] font-medium text-[#0d0d0d] hover:opacity-90"
+              >
+                Restore
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* §7 Diff modal */}
+      {diffTarget && (
+        <DiffModal
+          projectId={projectId}
+          version={diffTarget.v}
+          snapshot={diffTarget.snapshot}
+          onClose={() => setDiffTarget(null)}
+        />
+      )}
+
+      {/* Toast */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 z-[60] -translate-x-1/2 rounded-[6px] border border-border bg-surface-elevated px-4 py-2 font-mono text-[12px] text-foreground shadow-[0_4px_24px_rgba(0,0,0,0.6)]">
+          {toast}
+        </div>
       )}
 
       {conflicts && (
@@ -795,6 +1118,44 @@ function CollapseTab({ side, onClick }: { side: "left" | "right"; onClick: () =>
     >
       {side === "left" ? "‹ collapse" : "collapse ›"}
     </button>
+  );
+}
+
+// §3 — toolbar that floats above the selected element in the preview.
+function FloatingToolbar({
+  rect,
+  onDuplicate,
+  onEdit,
+  onDelete,
+  onAddSimilar,
+}: {
+  rect: { top: number; left: number; width: number; height: number };
+  onDuplicate: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  onAddSimilar: () => void;
+}) {
+  // 8px above the element, centered. Flip below if there's no room up top.
+  const above = rect.top > 36;
+  const top = above ? rect.top - 8 : rect.top + rect.height + 8;
+  const btn =
+    "rounded-[4px] px-1.5 py-1 font-sans text-[11px] text-muted transition-colors hover:text-accent";
+  return (
+    <div
+      className="absolute z-20"
+      style={{
+        left: rect.left + rect.width / 2,
+        top,
+        transform: above ? "translate(-50%, -100%)" : "translate(-50%, 0)",
+      }}
+    >
+      <div className="grad-border flex items-center gap-0.5 rounded-[8px] bg-surface px-1 py-0.5 shadow-[0_4px_16px_rgba(0,0,0,0.5)]">
+        <button onClick={onDuplicate} className={btn} title="Duplicate">⎘ Duplicate</button>
+        <button onClick={onEdit} className={btn} title="Edit in chat">✎ Edit</button>
+        <button onClick={onDelete} className={`${btn} hover:text-error`} title="Delete">✕ Delete</button>
+        <button onClick={onAddSimilar} className={btn} title="AI: add similar">+ Add similar</button>
+      </div>
+    </div>
   );
 }
 

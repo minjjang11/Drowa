@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
 } from "react";
+import { injectLineAttrs } from "@/lib/jsxTransform";
 import type { Overrides, Selection, StyleMap } from "@/lib/types";
 
 export interface PreviewHandle {
@@ -14,6 +15,8 @@ export interface PreviewHandle {
   applyStyle: (id: string, style: StyleMap) => void;
   /** Clear the current selection highlight inside the iframe. */
   clearSelection: () => void;
+  /** Select an element by its drowa id (breadcrumb / ancestor jump). */
+  selectById: (id: string) => void;
 }
 
 interface PreviewProps {
@@ -60,6 +63,9 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
     clearSelection() {
       post({ type: "drowa:clearSelection" });
     },
+    selectById(id) {
+      post({ type: "drowa:selectId", id });
+    },
   }));
 
   // Push edit-mode + overrides whenever they change (and the iframe is alive).
@@ -78,6 +84,7 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
       const data = e.data as
         | { type: "drowa:ready" }
         | { type: "drowa:selected"; payload: Selection }
+        | { type: "drowa:deselected" }
         | { type: "drowa:moved"; id: string; transform: string }
         | { type: "drowa:error"; message: string; stack?: string; line?: number };
       if (!data || typeof data.type !== "string") return;
@@ -90,6 +97,9 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
           break;
         case "drowa:selected":
           onSelect(data.payload);
+          break;
+        case "drowa:deselected":
+          onSelect(null);
           break;
         case "drowa:moved":
           onMove(data.id, data.transform);
@@ -115,7 +125,10 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
 });
 
 function buildSrcDoc(code: string): string {
-  const normalized = code
+  // 3-7 §1: tag every JSX element with its source line before babel compiles it,
+  // so a clicked DOM node reports the line it came from.
+  const withLines = injectLineAttrs(code);
+  const normalized = withLines
     .replace(/export\s+default\s+function\s+App/, "function App")
     .replace(/export\s+default\s+App\s*;?/, "")
     .replace(/export\s+default\s+/, "const __Default = ");
@@ -132,7 +145,7 @@ function buildSrcDoc(code: string): string {
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <style>
       html,body,#root{height:100%;margin:0;}
-      [data-drowa-selected]{outline:2px solid #5b6af0 !important;outline-offset:1px;}
+      [data-drowa-selected]{outline:2px solid #f59e0b !important;outline-offset:1px;}
       .drowa-edit [data-drowa-id]{cursor:pointer;}
       .drowa-dragging{opacity:.5 !important;}
     </style>
@@ -190,12 +203,14 @@ const EDITOR_SCRIPT = `<script>
   });
 
   var STYLE_PROPS = ["color","backgroundColor","fontSize","fontFamily",
+    "width","height","borderRadius",
     "paddingTop","paddingRight","paddingBottom","paddingLeft",
     "marginTop","marginRight","marginBottom","marginLeft"];
   var editMode = false;
   var overrides = {};
   var selected = null;
   var drag = null;
+  var dragMoved = false;
 
   function send(msg) { parent.postMessage(msg, "*"); }
 
@@ -228,6 +243,33 @@ const EDITOR_SCRIPT = `<script>
     return out;
   }
 
+  function lineOf(el) {
+    var l = el.getAttribute("data-drowa-line");
+    return l ? parseInt(l, 10) : 0;
+  }
+
+  // Ancestor chain root→element, for the breadcrumb (only nodes we can map).
+  function pathOf(el) {
+    var chain = [];
+    var n = el;
+    while (n && n.id !== "root") {
+      if (n.getAttribute && n.getAttribute("data-drowa-id")) {
+        chain.unshift({
+          id: n.getAttribute("data-drowa-id"),
+          line: lineOf(n),
+          tag: n.tagName.toLowerCase()
+        });
+      }
+      n = n.parentElement;
+    }
+    return chain;
+  }
+
+  function rectOf(el) {
+    var r = el.getBoundingClientRect();
+    return { top: r.top, left: r.left, width: r.width, height: r.height };
+  }
+
   function select(el) {
     if (selected) selected.removeAttribute("data-drowa-selected");
     selected = el;
@@ -235,15 +277,32 @@ const EDITOR_SCRIPT = `<script>
     send({ type: "drowa:selected", payload: {
       id: el.getAttribute("data-drowa-id"),
       tag: el.tagName.toLowerCase(),
-      styles: readStyles(el)
+      line: lineOf(el),
+      text: (el.textContent || "").trim().slice(0, 80),
+      styles: readStyles(el),
+      rect: rectOf(el),
+      path: pathOf(el)
     }});
+  }
+
+  function deselect() {
+    if (selected) selected.removeAttribute("data-drowa-selected");
+    selected = null;
+    send({ type: "drowa:deselected" });
   }
 
   document.addEventListener("click", function (e) {
     if (!editMode) return;
-    var el = e.target.closest("[data-drowa-id]");
-    if (!el) return;
     e.preventDefault(); e.stopPropagation();
+    var el = e.target.closest("[data-drowa-id]");
+    if (!el) { deselect(); return; }          // 3-7 §5 — background click clears
+    if (el === selected) {
+      if (dragMoved) { dragMoved = false; return; }   // that click ended a drag
+      // 3-7 §6 — re-click bubbles up to the parent element.
+      var parent = el.parentElement && el.parentElement.closest("[data-drowa-id]");
+      if (parent) { select(parent); return; }
+      return;
+    }
     select(el);
   }, true);
 
@@ -253,6 +312,7 @@ const EDITOR_SCRIPT = `<script>
     var el = e.target.closest("[data-drowa-id]");
     if (!el || el !== selected) return;
     e.preventDefault();
+    dragMoved = false;
     var base = (overrides[el.getAttribute("data-drowa-id")] || {}).transform || "";
     var m = /translate\\(([-0-9.]+)px,\\s*([-0-9.]+)px\\)/.exec(base);
     drag = { el: el, startX: e.clientX, startY: e.clientY,
@@ -262,6 +322,7 @@ const EDITOR_SCRIPT = `<script>
 
   document.addEventListener("mousemove", function (e) {
     if (!drag) return;
+    dragMoved = true;
     var x = drag.baseX + (e.clientX - drag.startX);
     var y = drag.baseY + (e.clientY - drag.startY);
     drag.el.style.transform = "translate(" + x + "px, " + y + "px)";
@@ -271,9 +332,39 @@ const EDITOR_SCRIPT = `<script>
   document.addEventListener("mouseup", function () {
     if (!drag) return;
     drag.el.classList.remove("drowa-dragging");
-    var t = "translate(" + (drag.lastX || drag.baseX) + "px, " + (drag.lastY || drag.baseY) + "px)";
-    send({ type: "drowa:moved", id: drag.el.getAttribute("data-drowa-id"), transform: t });
+    if (dragMoved) {
+      var t = "translate(" + (drag.lastX || drag.baseX) + "px, " + (drag.lastY || drag.baseY) + "px)";
+      send({ type: "drowa:moved", id: drag.el.getAttribute("data-drowa-id"), transform: t });
+      send({ type: "drowa:selected", payload: {
+        id: drag.el.getAttribute("data-drowa-id"),
+        tag: drag.el.tagName.toLowerCase(),
+        line: lineOf(drag.el),
+        text: (drag.el.textContent || "").trim().slice(0, 80),
+        styles: readStyles(drag.el),
+        rect: rectOf(drag.el),
+        path: pathOf(drag.el)
+      }});
+    }
     drag = null;
+  }, true);
+
+  // Keep the floating toolbar glued to the element as the preview scrolls.
+  var ticking = false;
+  window.addEventListener("scroll", function () {
+    if (!selected || ticking) return;
+    ticking = true;
+    requestAnimationFrame(function () {
+      ticking = false;
+      if (selected) send({ type: "drowa:selected", payload: {
+        id: selected.getAttribute("data-drowa-id"),
+        tag: selected.tagName.toLowerCase(),
+        line: lineOf(selected),
+        text: (selected.textContent || "").trim().slice(0, 80),
+        styles: readStyles(selected),
+        rect: rectOf(selected),
+        path: pathOf(selected)
+      }});
+    });
   }, true);
 
   window.addEventListener("message", function (e) {
@@ -291,6 +382,9 @@ const EDITOR_SCRIPT = `<script>
     } else if (d.type === "drowa:clearSelection") {
       if (selected) selected.removeAttribute("data-drowa-selected");
       selected = null;
+    } else if (d.type === "drowa:selectId") {
+      var el = document.querySelector('[data-drowa-id="' + d.id + '"]');
+      if (el) select(el);
     }
   });
 

@@ -52,11 +52,34 @@ export type StyleMap = Record<string, string>;
 /** Per-project overrides: drowa element id → style props. Stored as overrides.json. */
 export type Overrides = Record<string, StyleMap>;
 
+/** One hop in the ancestor chain, used for the breadcrumb path (3-7 §6). */
+export interface PathNode {
+  id: string;
+  line: number;
+  tag: string;
+}
+
+/** Bounding box of the selected element, relative to the iframe viewport (px). */
+export interface ElementRect {
+  top: number;
+  left: number;
+  width: number;
+  height: number;
+}
+
 /** Payload the iframe sends when an element is clicked. */
 export interface Selection {
   id: string;
   tag: string;
+  /** Source line (1-based) the element maps to via data-drowa-line. 0 if unknown. */
+  line: number;
+  /** Truncated text content, for context in Edit / Add-similar prompts. */
+  text?: string;
   styles: StyleMap;
+  /** Where to anchor the floating toolbar over the preview. */
+  rect?: ElementRect;
+  /** Ancestor chain root→element, for the breadcrumb. */
+  path?: PathNode[];
 }
 
 // ─── Design system (Phase 3-1) ───────────────────────────────────
@@ -129,3 +152,29 @@ export type DeviceMode = "desktop" | "tablet" | "mobile";
 
 /** Workspace save/generation status, drives the toolbar status pill. */
 export type Status = "ready" | "generating" | "saved" | "error";
+
+// ─── Version history (Phase 3-8) ─────────────────────────────────
+export type VersionTrigger =
+  | "manual"
+  | "ai_generation"
+  | "template_insert"
+  | "github_sync"
+  | "auto_fix"
+  | "pre_restore";
+
+/** What a version captures: every file + the context.md at snapshot time. */
+export interface VersionSnapshot {
+  files: { path: string; content: string }[];
+  context_md: string;
+}
+
+export interface VersionRow {
+  id: string;
+  project_id: string;
+  label: string;
+  trigger: VersionTrigger;
+  created_by: string | null;
+  created_at: string;
+  /** Only loaded on demand (preview / diff) — list rows omit it. */
+  snapshot?: VersionSnapshot;
+}

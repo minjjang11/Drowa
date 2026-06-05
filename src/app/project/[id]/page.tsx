@@ -7,10 +7,13 @@ import type { DesignTokens, FileRow, Message, Overrides, Project } from "@/lib/t
 
 export default async function ProjectPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams?: Promise<{ seed?: string }>;
 }) {
   const { id } = await params;
+  const seed = (await searchParams)?.seed ?? null;
   const supabase = await createClient();
 
   const {
@@ -82,6 +85,7 @@ export default async function ProjectPage({
       initialGithubLinked={!!ghLink}
       initialDev={toChat(all, "dev_ai")}
       initialDesign={toChat(all, "design_ai")}
+      initialPrompt={seed}
     />
   );
 }

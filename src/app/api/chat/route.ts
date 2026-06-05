@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { claude, MODEL, buildRequest, extractCode, validateGeneratedCode } from "@/lib/claude";
+import { snapshotProject } from "@/lib/versions";
 import { DEFAULT_TOKENS } from "@/lib/types";
-import type { AiRole, DesignTokens, FileRow, Message } from "@/lib/types";
+import type { AiRole, DesignTokens, FileRow, Message, VersionTrigger } from "@/lib/types";
 
 const PREVIEW_PATH = "App.tsx";
 const RECENT_LIMIT = 6;
@@ -16,7 +17,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: { projectId?: string; role?: AiRole; prompt?: string; image?: string };
+  let body: {
+    projectId?: string;
+    role?: AiRole;
+    prompt?: string;
+    image?: string;
+    trigger?: VersionTrigger;
+  };
   try {
     body = await req.json();
   } catch {
@@ -126,6 +133,10 @@ export async function POST(req: Request) {
 
   // If code was produced, reflect it in the preview file + log it to context.md.
   if (code) {
+    // 3-8: snapshot the pre-change state before overwriting the file.
+    const trigger: VersionTrigger = body.trigger === "auto_fix" ? "auto_fix" : "ai_generation";
+    await snapshotProject(supabase, projectId, user.id, null, trigger);
+
     await supabase
       .from("files")
       .upsert(

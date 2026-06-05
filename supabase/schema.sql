@@ -57,6 +57,11 @@ create table if not exists versions (
   created_at  timestamptz not null default now()
 );
 
+-- Phase 3-8: snapshot author + what triggered it.
+alter table versions add column if not exists created_by uuid references auth.users(id) on delete set null;
+alter table versions add column if not exists "trigger"  text not null default 'manual';
+create index if not exists idx_versions_project on versions(project_id, created_at desc);
+
 create index if not exists idx_files_project       on files(project_id);
 create index if not exists idx_messages_project     on messages(project_id, created_at desc);
 create index if not exists idx_members_user         on project_members(user_id);
@@ -173,6 +178,7 @@ create trigger trg_add_owner after insert on projects
 alter publication supabase_realtime add table files;
 alter publication supabase_realtime add table messages;
 alter publication supabase_realtime add table context_md;
+alter publication supabase_realtime add table versions;
 
 -- ─────────────────────────────────────────────────────────────
 -- Phase 3-1: Design System tokens

@@ -11,10 +11,18 @@ interface Repo {
   default_branch: string;
 }
 
-export function NewProjectButton({ variant }: { variant: "card" | "button" }) {
+export function NewProjectButton({
+  variant,
+  label,
+  initialTab = "fresh",
+}: {
+  variant: "card" | "button";
+  label?: string;
+  initialTab?: "fresh" | "github";
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState<"fresh" | "github">("fresh");
+  const [tab, setTab] = useState<"fresh" | "github">(initialTab);
 
   const [connected, setConnected] = useState<boolean | null>(null);
   const [repos, setRepos] = useState<Repo[]>([]);
@@ -75,7 +83,7 @@ export function NewProjectButton({ variant }: { variant: "card" | "button" }) {
         onClick={() => setOpen(true)}
         className="btn-grad rounded-[4px] px-3 py-1.5 text-sm font-medium text-foreground"
       >
-        + New Project
+        {label ?? "+ New Project"}
       </button>
     );
 

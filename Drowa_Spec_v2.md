@@ -137,7 +137,7 @@ AI code gen, separate chats + shared context, iframe preview, context.md auto-ge
 ### ✅ Phase 2 (done)
 Visual editor (click → property panel, drag → reposition), in-app MD editor, toolbar (device toggle, status pill), collapsible drawers, file tree, Code/Preview tabs.
 
-### 🔜 Phase 3 — "Stop searching and configuring"
+### ✅ Phase 3 — "Stop searching and configuring" (3-1 … 3-8 all done)
 
 **3-1. Design System engine**
 - Per-project tokens: color / typography / spacing / radius
@@ -173,13 +173,13 @@ Visual editor (click → property panel, drag → reposition), in-app MD editor,
 - Edit + AI-assist inside Drowa → commit/push back
 - (Vercel projects come in via their connected GitHub repo)
 
-**3-7. Visual ↔ Code linking** (power-user bridge, "glass box")
+**3-7. Visual ↔ Code linking** ✅ done (power-user bridge, "glass box")
 - Click element in preview → corresponding code highlights in right code panel
 - Floating toolbar on selection: Duplicate / Edit / Delete / + Add similar
 - "+ Add similar" → AI clones the component into the code
 - Edit via the in-platform toolbar → reflected in code → preview re-renders
 
-**3-8. Version history**
+**3-8. Version history** ✅ done
 - Snapshots at key points, rollback, diff view (highlight changes)
 
 ### 📦 Phase 4 — sales-ready (later)

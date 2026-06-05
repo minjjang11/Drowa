@@ -45,14 +45,18 @@ export function PropertyPanel({
   selection,
   transform,
   onChange,
+  onSelectPath,
 }: {
   selection: Selection | null;
   transform?: string;
   onChange: (style: StyleMap) => void;
+  /** Jump selection to an ancestor when a breadcrumb crumb is clicked (3-7 §6). */
+  onSelectPath?: (id: string) => void;
 }) {
   const open = !!selection;
   const s = selection?.styles ?? {};
   const pos = parseTranslate(transform);
+  const path = selection?.path ?? [];
 
   const sides = (group: "padding" | "margin") =>
     (["Top", "Right", "Bottom", "Left"] as const).map((side) => (
@@ -77,8 +81,30 @@ export function PropertyPanel({
         <span className="font-mono text-[11px] text-accent">
           &lt;{selection?.tag}&gt;
         </span>
-        <span className="font-mono text-[10px] text-muted">{selection?.id}</span>
+        {selection?.line ? (
+          <span className="font-mono text-[10px] text-muted">L{selection.line}</span>
+        ) : null}
       </div>
+
+      {/* Breadcrumb: div › section › div › button — click a crumb to select it. */}
+      {path.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 border-b border-border px-3 py-2 font-mono text-[10px] text-muted">
+          {path.map((node, i) => {
+            const active = node.id === selection?.id;
+            return (
+              <span key={node.id} className="flex items-center gap-1">
+                <button
+                  onClick={() => onSelectPath?.(node.id)}
+                  className={`transition-colors hover:text-accent ${active ? "text-accent" : "text-muted"}`}
+                >
+                  {node.tag}
+                </button>
+                {i < path.length - 1 && <span className="text-muted/50">›</span>}
+              </span>
+            );
+          })}
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto">
         <Section title="Typography">

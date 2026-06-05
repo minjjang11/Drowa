@@ -29,6 +29,8 @@ export function Toolbar({
   onOpenDesign,
   onOpenTemplates,
   onOpenInspiration,
+  onOpenVersions,
+  onSaveVersion,
   github,
   onSync,
   onPull,
@@ -43,6 +45,8 @@ export function Toolbar({
   onOpenDesign: () => void;
   onOpenTemplates: () => void;
   onOpenInspiration: () => void;
+  onOpenVersions: () => void;
+  onSaveVersion: () => void;
   github: { linked: boolean; dirty: boolean; busy: boolean };
   onSync: () => void;
   onPull: () => void;
@@ -127,6 +131,20 @@ export function Toolbar({
 
       {/* Right: design system + status + export + deploy */}
       <div className="flex items-center gap-2">
+        <button
+          onClick={onSaveVersion}
+          title="Save version"
+          className="glow-hover flex h-7 w-7 items-center justify-center rounded-[4px] border border-border bg-background text-sm text-foreground transition-colors hover:border-accent"
+        >
+          ⊕
+        </button>
+        <button
+          onClick={onOpenVersions}
+          title="Version history"
+          className="glow-hover flex h-7 w-7 items-center justify-center rounded-[4px] border border-border bg-background text-sm text-foreground transition-colors hover:border-accent"
+        >
+          ⟲
+        </button>
         <button
           onClick={onOpenInspiration}
           title="Inspiration"
