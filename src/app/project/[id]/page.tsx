@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Workspace } from "@/components/Workspace";
 import type { ChatMessage } from "@/components/ChatPanel";
 import { DEFAULT_TOKENS } from "@/lib/types";
-import type { DesignTokens, FileRow, Message, Overrides, Project } from "@/lib/types";
+import type { DesignTokens, FileRow, MemberRole, Message, Overrides, Project } from "@/lib/types";
 
 export default async function ProjectPage({
   params,
@@ -53,6 +53,15 @@ export default async function ProjectPage({
     .eq("project_id", id)
     .maybeSingle();
 
+  // Current user's role drives which chat opens by default (teammate UX).
+  const { data: myMember } = await supabase
+    .from("project_members")
+    .select("role")
+    .eq("project_id", id)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  const myRole = (myMember as { role: MemberRole } | null)?.role ?? "developer";
+
   const initialTokens =
     (tokenRow as { tokens: DesignTokens } | null)?.tokens ?? DEFAULT_TOKENS;
 
@@ -86,6 +95,7 @@ export default async function ProjectPage({
       initialDev={toChat(all, "dev_ai")}
       initialDesign={toChat(all, "design_ai")}
       initialPrompt={seed}
+      myRole={myRole}
     />
   );
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { claude, MODEL, buildRequest, extractCode, validateGeneratedCode } from "@/lib/claude";
+import { processForPreview } from "@/lib/codeProcessor";
 import { snapshotProject } from "@/lib/versions";
 import { DEFAULT_TOKENS } from "@/lib/types";
 import type { AiRole, DesignTokens, FileRow, Message, VersionTrigger } from "@/lib/types";
@@ -122,8 +123,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: msg }, { status: 502 });
   }
 
-  const code = extractCode(reply);
-  const codeValid = code ? validateGeneratedCode(code).valid : true;
+  const rawCode = extractCode(reply);
+  const codeValid = rawCode ? validateGeneratedCode(rawCode).valid : true;
+  // Normalize to the iframe's bare-App format before storing/returning.
+  const code = rawCode ? processForPreview(rawCode) : null;
 
   // Persist the user turn and the AI turn (same channel).
   await supabase.from("messages").insert([

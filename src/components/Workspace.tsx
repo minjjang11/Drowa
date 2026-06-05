@@ -33,6 +33,7 @@ import type {
   AiRole,
   DesignTokens,
   DeviceMode,
+  MemberRole,
   Overrides,
   Selection,
   Status,
@@ -70,6 +71,7 @@ export function Workspace({
   initialDev,
   initialDesign,
   initialPrompt,
+  myRole,
 }: {
   projectId: string;
   projectName: string;
@@ -83,6 +85,8 @@ export function Workspace({
   initialDesign: ChatMessage[];
   /** Home "Start from Scratch" seed — fired once at the Developer AI on mount. */
   initialPrompt?: string | null;
+  /** Current user's project role — pre-opens their chat drawer. */
+  myRole?: MemberRole;
 }) {
   const router = useRouter();
   const [code, setCode] = useState(initialCode);
@@ -122,8 +126,8 @@ export function Workspace({
   const [editMode, setEditMode] = useState(false);
   const [selection, setSelection] = useState<Selection | null>(null);
 
-  const [devOpen, setDevOpen] = useState(true);
-  const [designOpen, setDesignOpen] = useState(true);
+  const [devOpen, setDevOpen] = useState(myRole !== "designer");
+  const [designOpen, setDesignOpen] = useState(myRole !== "developer");
   const [device, setDevice] = useState<DeviceMode>("desktop");
   const [tab, setTab] = useState<"preview" | "code">("preview");
 

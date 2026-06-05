@@ -13,9 +13,9 @@ export default function LoginPage() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const authError = typeof window !== "undefined"
-    ? new URLSearchParams(window.location.search).get("error")
-    : null;
+  const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+  const authError = params?.get("error") ?? null;
+  const next = params?.get("next") ?? "/";
 
   async function handleGoogle() {
     setError(null);
@@ -23,7 +23,7 @@ export default function LoginPage() {
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
+      options: { redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}` },
     });
     if (error) {
       setError(error.message);
@@ -42,7 +42,7 @@ export default function LoginPage() {
         : await supabase.auth.signUp({ email, password });
     setLoading(false);
     if (error) { setError(error.message); return; }
-    router.push("/");
+    router.push(next);
     router.refresh();
   }
 

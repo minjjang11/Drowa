@@ -317,3 +317,61 @@ create policy gh_conn_all on github_connections for all
 drop policy if exists gh_links_all on github_links;
 create policy gh_links_all on github_links for all
   using (is_project_member(project_id)) with check (is_project_member(project_id));
+
+-- ─────────────────────────────────────────────────────────────
+-- Teammate invites (one-click invite link)
+-- ─────────────────────────────────────────────────────────────
+
+create table if not exists invites (
+  id          uuid primary key default gen_random_uuid(),
+  project_id  uuid not null references projects(id) on delete cascade,
+  token       uuid not null unique default gen_random_uuid(),
+  role        text not null check (role in ('developer', 'designer')),
+  created_by  uuid references auth.users(id) on delete set null,
+  used_by     uuid references auth.users(id) on delete set null,
+  expires_at  timestamptz not null default (now() + interval '7 days'),
+  created_at  timestamptz not null default now()
+);
+
+create index if not exists idx_invites_token on invites(token);
+
+alter table invites enable row level security;
+
+-- Project members create + view invites for their own projects.
+drop policy if exists invites_member on invites;
+create policy invites_member on invites for all
+  using (is_project_member(project_id)) with check (is_project_member(project_id));
+
+-- Invitee is not yet a member, so RLS can't grant the read/accept. These
+-- SECURITY DEFINER functions validate the token and act on the caller's behalf.
+create or replace function get_invite(invite_token uuid)
+returns table(project_id uuid, project_name text, role text, valid boolean)
+language sql security definer set search_path = public as $$
+  select i.project_id, p.name, i.role,
+         (i.used_by is null and i.expires_at > now()) as valid
+  from invites i
+  join projects p on p.id = i.project_id
+  where i.token = invite_token;
+$$;
+
+create or replace function accept_invite(invite_token uuid)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  inv invites;
+begin
+  select * into inv from invites where token = invite_token;
+  if inv.id is null then raise exception 'Invalid invite'; end if;
+  if inv.used_by is not null then raise exception 'Invite already used'; end if;
+  if inv.expires_at < now() then raise exception 'Invite expired'; end if;
+
+  insert into project_members (project_id, user_id, role)
+  values (inv.project_id, auth.uid(), inv.role)
+  on conflict (project_id, user_id) do nothing;
+
+  update invites set used_by = auth.uid() where id = inv.id;
+  return inv.project_id;
+end;
+$$;
+
+grant execute on function get_invite(uuid)    to authenticated;
+grant execute on function accept_invite(uuid) to authenticated;

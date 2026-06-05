@@ -8,6 +8,7 @@ import {
   useRef,
 } from "react";
 import { injectLineAttrs } from "@/lib/jsxTransform";
+import { processForPreview } from "@/lib/codeProcessor";
 import type { Overrides, Selection, StyleMap } from "@/lib/types";
 
 export interface PreviewHandle {
@@ -125,13 +126,10 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
 });
 
 function buildSrcDoc(code: string): string {
-  // 3-7 §1: tag every JSX element with its source line before babel compiles it,
-  // so a clicked DOM node reports the line it came from.
-  const withLines = injectLineAttrs(code);
-  const normalized = withLines
-    .replace(/export\s+default\s+function\s+App/, "function App")
-    .replace(/export\s+default\s+App\s*;?/, "")
-    .replace(/export\s+default\s+/, "const __Default = ");
+  // Strip imports/exports to the bare `function App` the iframe expects, then
+  // 3-7 §1: tag every JSX element with its source line before babel compiles it.
+  const cleaned = processForPreview(code);
+  const normalized = injectLineAttrs(cleaned);
 
   return `<!doctype html>
 <html>
@@ -171,10 +169,12 @@ function buildSrcDoc(code: string): string {
           return this.props.children;
         }
       }
+      // Hooks available globally — generated code uses bare useState etc.
+      const { useState, useEffect, useRef, useMemo, useCallback, useReducer, useContext, Fragment } = React;
       try {
         ${normalized}
         const Root = typeof App !== "undefined" ? App : (typeof __Default !== "undefined" ? __Default : null);
-        if (!Root) throw new Error("No component exported. Export a default 'App' component.");
+        if (!Root) throw new Error("No component named 'App' found. Define: function App() { return (...) }");
         ReactDOM.createRoot(document.getElementById("root")).render(
           React.createElement(__ErrorBoundary, null, React.createElement(Root))
         );

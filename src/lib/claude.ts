@@ -22,8 +22,15 @@ ${lens}
 OUTPUT CONTRACT — follow exactly:
 - The project renders a SINGLE React component in a sandboxed preview.
 - When the user asks for a UI/code change, return the COMPLETE, updated file as ONE \`\`\`tsx code block.
-- The component must be a default export named \`App\`, self-contained, and use only React + inline Tailwind CSS classes (no imports beyond \`react\`).
-- Do NOT use external packages, network calls, or browser APIs that need permissions.
+
+CRITICAL — generate code in this exact format for the preview iframe:
+- NO import statements.
+- NO export statements.
+- A single function named exactly \`App\`: \`function App() { return (...) }\`.
+- React and hooks (useState, useEffect, useRef) are available globally — do not import them.
+- Tailwind CSS is available globally — use className with utility classes.
+- Do NOT use any external component libraries, network calls, or browser APIs that need permissions.
+
 - Keep prior working behavior unless the user asks to change it.
 - After the code block, add 1-2 sentences describing what changed. No other prose.
 

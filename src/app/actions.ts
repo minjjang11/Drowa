@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { DEFAULT_TOKENS } from "@/lib/types";
 import { PAGE_TEMPLATES } from "@/lib/pageTemplates";
+import { processForPreview } from "@/lib/codeProcessor";
 
 const STARTER_APP = `export default function App() {
   return (
@@ -90,9 +91,26 @@ export async function createProjectFromTemplate(formData: FormData) {
   const templateId = String(formData.get("templateId") ?? "");
   const tpl = PAGE_TEMPLATES.find((t) => t.id === templateId);
   if (!tpl) return;
-  const id = await bootstrapProject(tpl.name, tpl.code);
+  const id = await bootstrapProject(tpl.name, processForPreview(tpl.code));
   revalidatePath("/");
   redirect(`/project/${id}`);
+}
+
+/** Accept a teammate invite: validate token (via SECURITY DEFINER rpc), join as
+ *  the invited role, land in the workspace. */
+export async function acceptInvite(formData: FormData) {
+  const token = String(formData.get("token") ?? "");
+  if (!token) return;
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect(`/login?next=/invite/${token}`);
+
+  const { data, error } = await supabase.rpc("accept_invite", { invite_token: token });
+  if (error || !data) redirect(`/invite/${token}?error=1`);
+  revalidatePath("/");
+  redirect(`/project/${data}`);
 }
 
 export async function signOut() {
