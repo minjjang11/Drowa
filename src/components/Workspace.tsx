@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Preview, type PreviewHandle } from "./Preview";
@@ -10,6 +10,9 @@ import { VersionHistoryPanel } from "./VersionHistoryPanel";
 import { DiffModal } from "./DiffModal";
 import { extractJsxBlock, insertAfterBlock, removeBlock } from "@/lib/jsxTransform";
 import { relativeTime } from "@/lib/versionMeta";
+import { bundleProject } from "@/lib/bundler";
+import { buildStandaloneHtml } from "@/lib/standalone";
+import { DiffEditor } from "@monaco-editor/react";
 import { ChatPanel, type ChatMessage } from "./ChatPanel";
 import { Toolbar } from "./Toolbar";
 import { FileTree } from "./FileTree";
@@ -63,6 +66,7 @@ export function Workspace({
   projectId,
   projectName,
   initialCode,
+  initialFiles,
   initialOverrides,
   initialContextMd,
   initialContextUpdatedAt,
@@ -76,6 +80,8 @@ export function Workspace({
   projectId: string;
   projectName: string;
   initialCode: string;
+  /** All project code files (incl. App.tsx, excl. overrides) — for the bundler. */
+  initialFiles: { path: string; content: string }[];
   initialOverrides: Overrides;
   initialContextMd: string;
   initialContextUpdatedAt: string | null;
@@ -90,6 +96,16 @@ export function Workspace({
 }) {
   const router = useRouter();
   const [code, setCode] = useState(initialCode);
+  // Dependency files (everything but the editable App.tsx entry) for bundling.
+  const depFiles = useMemo(
+    () => initialFiles.filter((f) => f.path !== "App.tsx"),
+    [initialFiles],
+  );
+  // The self-contained bundle the iframe renders — inlines local imports.
+  const previewBundle = useMemo(
+    () => bundleProject([...depFiles, { path: "App.tsx", content: code }]),
+    [depFiles, code],
+  );
   const [overrides, setOverrides] = useState<Overrides>(initialOverrides);
   const [contextMd, setContextMd] = useState(initialContextMd);
   const [contextUpdatedAt, setContextUpdatedAt] = useState(initialContextUpdatedAt);
@@ -102,6 +118,10 @@ export function Workspace({
   const [devPrefill, setDevPrefill] = useState<{ text: string; n: number }>({ text: "", n: 0 });
   const [customActions, setCustomActions] = useState<QuickAction[]>([]);
   const [previewError, setPreviewError] = useState<{ message: string; stack?: string } | null>(null);
+  // P1 auto-fix: proposed fix awaiting the user's diff approval + attempt counter.
+  const [pendingFix, setPendingFix] = useState<{ proposed: string; reply: string } | null>(null);
+  const fixAttempts = useRef(0);
+  const [deployOpen, setDeployOpen] = useState(false);
   const [lastRole, setLastRole] = useState<AiRole>("dev_ai");
   const [ghDirty, setGhDirty] = useState(false);
   const [ghBusy, setGhBusy] = useState(false);
@@ -204,18 +224,46 @@ export function Workspace({
     [projectId],
   );
 
-  // Live sync: partner's code + overrides.
+  // P3 — reliable live sync: websocket + catch-up on (re)connect + 10s poll
+  // fallback. lastFilesSync tracks the newest files.updated_at we've applied so
+  // the poll never reverts our own in-flight edits.
+  const lastFilesSync = useRef<string>("");
   useEffect(() => {
     const supabase = createClient();
+
+    // Pull the latest App.tsx / overrides straight from the DB (catch-up).
+    async function catchUp() {
+      const { data } = await supabase
+        .from("files")
+        .select("path, content, updated_at")
+        .eq("project_id", projectId);
+      for (const row of (data as { path: string; content: string; updated_at: string }[] | null) ?? []) {
+        if (row.path === "App.tsx") {
+          if (row.updated_at > lastFilesSync.current) {
+            lastFilesSync.current = row.updated_at;
+            setCode(row.content);
+          }
+        } else if (row.path === OVERRIDES_PATH) {
+          try {
+            setOverrides(JSON.parse(row.content || "{}"));
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+    }
+
     const channel = supabase
       .channel(`files:${projectId}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "files", filter: `project_id=eq.${projectId}` },
         (payload) => {
-          const row = payload.new as { path: string; content: string };
-          if (row?.path === "App.tsx") setCode(row.content);
-          else if (row?.path === OVERRIDES_PATH) {
+          const row = payload.new as { path: string; content: string; updated_at?: string };
+          if (row?.path === "App.tsx") {
+            if (row.updated_at) lastFilesSync.current = row.updated_at;
+            setCode(row.content);
+          } else if (row?.path === OVERRIDES_PATH) {
             try {
               setOverrides(JSON.parse(row.content || "{}"));
             } catch {
@@ -243,8 +291,16 @@ export function Workspace({
           if (row?.tokens) setTokens(row.tokens);
         },
       )
-      .subscribe();
+      .subscribe((status) => {
+        // On every (re)connect, reconcile against the DB so nothing is missed.
+        if (status === "SUBSCRIBED") catchUp();
+      });
+
+    // Polling fallback in case the websocket silently drops.
+    const poll = setInterval(catchUp, 10000);
+
     return () => {
+      clearInterval(poll);
       supabase.removeChannel(channel);
     };
   }, [projectId]);
@@ -595,8 +651,17 @@ export function Workspace({
     URL.revokeObjectURL(url);
   }
 
+  // P2 — real deploy: download a self-contained, ready-to-host index.html.
   function deploy() {
-    alert("One-click deploy lands in Phase 3 (Vercel API). For now: Export → push to your own repo.");
+    const html = buildStandaloneHtml(previewBundle, projectName);
+    const blob = new Blob([html], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "index.html";
+    a.click();
+    URL.revokeObjectURL(url);
+    setDeployOpen(true);
   }
 
   function applyStyle(insp: Inspiration) {
@@ -658,53 +723,86 @@ export function Workspace({
     setStatus("error");
   }, []);
 
-  // One-click auto-fix: send the error + current code to the AI, apply the result.
+  // P1 Safe auto-fix: ask the AI for a fix, but PREVIEW it as a diff first —
+  // never overwrite the user's work blindly. Stops after 2 failed attempts.
   async function fixError() {
     if (!previewError) return;
+    if (fixAttempts.current >= 2) {
+      const append = lastRole === "dev_ai" ? setDev : setDesign;
+      append((prev) => [
+        ...prev,
+        { sender: "ai", content: "Auto-fix couldn't resolve this. Describe the issue to me and I'll fix it directly." },
+      ]);
+      return;
+    }
     const role = lastRole;
-    const append = role === "dev_ai" ? setDev : setDesign;
     const fixPrompt = `The following error occurred when rendering the UI:
 ${previewError.message}
 ${(previewError.stack ?? "").slice(0, 600)}
 
-Fix the error. Return only the corrected complete code in one \`\`\`tsx block. Do not change any functionality or visual design. Code only.`;
+Fix ONLY this error. Change nothing else — keep all existing functionality and visual design exactly. Return the complete corrected file in one \`\`\`tsx block. Code only.`;
 
-    append((prev) => [...prev, { sender: "user", content: "🔧 Fix this error automatically" }]);
     setBusy(role);
     setStatus("generating");
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, role, prompt: fixPrompt, trigger: "auto_fix" }),
+        // dryRun: get a proposal without touching the DB until the user approves.
+        body: JSON.stringify({ projectId, role, prompt: fixPrompt, trigger: "auto_fix", dryRun: true }),
       });
       const data = await res.json();
       if (res.ok && data.code && !data.invalid) {
-        setCode(data.code);
-        setGhDirty(true);
-        setVersionsRefresh((n) => n + 1);
-        setPreviewError(null);
-        append((prev) => [...prev, { sender: "ai", content: data.reply }]);
-        flashStatus("saved");
-
-        const supabase = createClient();
-        const stamp = new Date().toISOString();
-        const short = previewError.message.slice(0, 120);
-        const nextMd = `${contextMd.trim()}\n\n## ${stamp} — Auto-fix applied\nError: ${short}\nResolution: AI-generated fix applied successfully`;
-        setContextMd(nextMd);
-        setContextUpdatedAt(stamp);
-        await supabase.from("context_md").update({ content: nextMd }).eq("project_id", projectId);
+        setPendingFix({ proposed: data.code, reply: data.reply ?? "" });
       } else {
-        append((prev) => [...prev, { sender: "ai", content: data.reply ?? "⚠️ Fix failed" }]);
+        fixAttempts.current += 1;
+        const append = role === "dev_ai" ? setDev : setDesign;
+        append((prev) => [
+          ...prev,
+          {
+            sender: "ai",
+            content:
+              fixAttempts.current >= 2
+                ? "Auto-fix couldn't resolve this. Describe the issue to me and I'll fix it directly."
+                : "That fix didn't look valid — try again, or describe the issue.",
+          },
+        ]);
         setStatus("error");
-        setDesignPrefill((p) => ({ text: "Still broken — here's what I want: ", n: p.n + 1 }));
       }
     } catch {
-      append((prev) => [...prev, { sender: "ai", content: "⚠️ Network error" }]);
       setStatus("error");
     } finally {
       setBusy(null);
     }
+  }
+
+  // Apply a previewed fix after the user confirms the diff.
+  async function applyFix() {
+    const fix = pendingFix;
+    if (!fix) return;
+    setPendingFix(null);
+    fixAttempts.current = 0;
+    const append = lastRole === "dev_ai" ? setDev : setDesign;
+
+    await snapshotVersion(null, "auto_fix"); // safety net before applying
+    setCode(fix.proposed);
+    setGhDirty(true);
+    setVersionsRefresh((n) => n + 1);
+    setPreviewError(null);
+    append((prev) => [...prev, { sender: "ai", content: fix.reply || "Applied the fix." }]);
+
+    const supabase = createClient();
+    const stamp = new Date().toISOString();
+    await supabase.from("files").upsert(
+      { project_id: projectId, path: "App.tsx", content: fix.proposed },
+      { onConflict: "project_id,path" },
+    );
+    const short = (previewError?.message ?? "").slice(0, 120);
+    const nextMd = `${contextMd.trim()}\n\n## ${stamp} — Auto-fix applied\nError: ${short}\nResolution: user-approved AI fix`;
+    setContextMd(nextMd);
+    setContextUpdatedAt(stamp);
+    await supabase.from("context_md").update({ content: nextMd }).eq("project_id", projectId);
+    flashStatus("saved");
   }
 
   const tabBtn = (id: "preview" | "code", label: string) => (
@@ -825,7 +923,7 @@ Fix the error. Return only the corrected complete code in one \`\`\`tsx block. D
               >
                 <Preview
                   ref={previewRef}
-                  code={previewVersion ? (previewVersion.snapshot.files.find((f) => f.path === "App.tsx")?.content ?? "") : code}
+                  code={previewVersion ? bundleProject(previewVersion.snapshot.files) : previewBundle}
                   overrides={overrides}
                   editMode={editMode && !previewVersion}
                   onSelect={setSelection}
@@ -833,6 +931,14 @@ Fix the error. Return only the corrected complete code in one \`\`\`tsx block. D
                   onError={handlePreviewError}
                 />
                 <div className="vignette pointer-events-none absolute inset-0 rounded-[6px]" />
+
+                {/* P4 — clean empty state before anything is built. */}
+                {!code.trim() && !previewVersion && (
+                  <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-[6px] bg-background text-center">
+                    <p className="serif text-2xl italic text-foreground">Nothing here yet</p>
+                    <p className="font-mono text-[12px] text-muted">Ask the AI to build something →</p>
+                  </div>
+                )}
 
                 {/* §3 Floating toolbar — anchored above the selected element. */}
                 {editMode && selection?.rect && (
@@ -847,10 +953,10 @@ Fix the error. Return only the corrected complete code in one \`\`\`tsx block. D
 
                 {previewError && (
                   <div className="absolute inset-x-0 bottom-0 z-10 border-t border-error bg-[#0d0d0d]/95 p-4 backdrop-blur-sm">
-                    <p className="mb-1 font-mono text-[10px] uppercase tracking-wider text-error">Render error</p>
-                    <pre className="mb-3 line-clamp-2 max-h-10 overflow-hidden font-mono text-[11px] leading-snug text-foreground">
-                      {previewError.message}
-                    </pre>
+                    <p className="mb-1 font-mono text-[10px] uppercase tracking-wider text-error">Something went wrong</p>
+                    <p className="mb-3 line-clamp-1 font-mono text-[11px] leading-snug text-muted">
+                      {previewError.message.split("\n")[0].slice(0, 140)}
+                    </p>
                     <div className="flex gap-2">
                       <button
                         onClick={fixError}
@@ -1031,6 +1137,68 @@ Fix the error. Return only the corrected complete code in one \`\`\`tsx block. D
                 className="rounded-[4px] bg-accent px-3 py-1.5 font-mono text-[12px] font-medium text-[#0d0d0d] hover:opacity-90"
               >
                 Restore
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* P1 — auto-fix diff confirmation */}
+      {pendingFix && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-6">
+          <div className="grad-border flex h-[80vh] w-full max-w-5xl flex-col rounded-[8px] bg-surface shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
+            <div className="flex h-11 shrink-0 items-center justify-between border-b border-border px-3">
+              <span className="serif text-[15px] italic text-foreground">Review the fix</span>
+              <span className="font-mono text-[11px] text-muted">
+                <span className="text-error">current</span> → <span className="text-success">proposed</span>
+              </span>
+            </div>
+            <div className="min-h-0 flex-1">
+              <DiffEditor
+                theme="vs-dark"
+                language="typescript"
+                original={code}
+                modified={pendingFix.proposed}
+                options={{ readOnly: true, renderSideBySide: true, minimap: { enabled: false }, fontSize: 12, scrollBeyondLastLine: false }}
+              />
+            </div>
+            <div className="flex shrink-0 justify-end gap-2 border-t border-border px-3 py-2">
+              <button
+                onClick={() => setPendingFix(null)}
+                className="rounded-[4px] px-3 py-1.5 font-mono text-[12px] text-muted hover:text-foreground"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={applyFix}
+                className="rounded-[4px] bg-accent px-3 py-1.5 font-mono text-[12px] font-medium text-[#0d0d0d] hover:opacity-90"
+              >
+                Apply fix
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* P2 — deploy instructions */}
+      {deployOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="grad-border w-full max-w-md rounded-[8px] bg-surface p-6 shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
+            <h2 className="serif text-lg italic text-foreground">Your site is ready 🎉</h2>
+            <p className="mt-2 font-mono text-[11px] leading-relaxed text-muted">
+              Downloaded <span className="text-accent">index.html</span> — a complete, self-contained site. To put it online with a public URL:
+            </p>
+            <ol className="mt-3 list-decimal space-y-1.5 pl-5 font-mono text-[11px] text-foreground">
+              <li>Open <a href="https://app.netlify.com/drop" target="_blank" rel="noreferrer" className="text-accent underline">app.netlify.com/drop</a></li>
+              <li>Drag <span className="text-accent">index.html</span> onto the page</li>
+              <li>Get your live <span className="text-accent">https://…netlify.app</span> URL instantly</li>
+            </ol>
+            <div className="mt-5 flex justify-end">
+              <button
+                onClick={() => setDeployOpen(false)}
+                className="btn-grad rounded-[4px] px-3 py-1.5 text-sm font-medium text-foreground"
+              >
+                Done
               </button>
             </div>
           </div>

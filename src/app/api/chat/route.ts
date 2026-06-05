@@ -24,6 +24,8 @@ export async function POST(req: Request) {
     prompt?: string;
     image?: string;
     trigger?: VersionTrigger;
+    /** Preview a result (e.g. auto-fix) without writing anything to the DB. */
+    dryRun?: boolean;
   };
   try {
     body = await req.json();
@@ -127,6 +129,11 @@ export async function POST(req: Request) {
   const codeValid = rawCode ? validateGeneratedCode(rawCode).valid : true;
   // Normalize to the iframe's bare-App format before storing/returning.
   const code = rawCode ? processForPreview(rawCode) : null;
+
+  // Dry run (safe auto-fix preview): return the proposal, touch nothing.
+  if (body.dryRun) {
+    return NextResponse.json({ reply, code: code ?? null, invalid: !codeValid });
+  }
 
   // Persist the user turn and the AI turn (same channel).
   await supabase.from("messages").insert([

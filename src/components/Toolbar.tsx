@@ -11,10 +11,11 @@ const DEVICES: { id: DeviceMode; label: string; icon: string }[] = [
   { id: "mobile", label: "Mobile", icon: "▮" },
 ];
 
+// Only three states surface to the user: Ready / Building… / Error.
 const STATUS_META: Record<Status, { label: string; dot: string; spin?: boolean }> = {
   ready: { label: "Ready", dot: "bg-success" },
-  generating: { label: "Generating…", dot: "bg-accent", spin: true },
-  saved: { label: "Saved", dot: "bg-muted" },
+  generating: { label: "Building…", dot: "bg-accent", spin: true },
+  saved: { label: "Ready", dot: "bg-success" },
   error: { label: "Error", dot: "bg-error" },
 };
 

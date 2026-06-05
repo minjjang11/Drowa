@@ -164,7 +164,10 @@ function buildSrcDoc(code: string): string {
         componentDidCatch(err) { __report(err); }
         render() {
           if (this.state.err) {
-            return React.createElement("pre", { style: { color: "#ef4444", padding: "16px", whiteSpace: "pre-wrap", font: "13px ui-monospace,monospace" } }, String(this.state.err.stack || this.state.err));
+            // Friendly one-liner in the preview; full detail goes to the parent.
+            return React.createElement("div", { style: { padding: "24px", font: "14px ui-sans-serif,system-ui", color: "#888880" } },
+              React.createElement("p", { style: { color: "#f5f5f0", margin: 0 } }, "Something went wrong rendering this."),
+              React.createElement("p", { style: { margin: "6px 0 0" } }, "Use \\"Fix automatically\\" to repair it."));
           }
           return this.props.children;
         }
@@ -181,8 +184,9 @@ function buildSrcDoc(code: string): string {
       } catch (err) {
         __report(err);
         document.getElementById("root").innerHTML =
-          '<pre style="color:#ef4444;padding:16px;white-space:pre-wrap;font:13px ui-monospace,monospace">' +
-          String(err && err.stack ? err.stack : err) + '</pre>';
+          '<div style="padding:24px;font:14px ui-sans-serif,system-ui;color:#888880">' +
+          '<p style="color:#f5f5f0;margin:0">Something went wrong rendering this.</p>' +
+          '<p style="margin:6px 0 0">Use &quot;Fix automatically&quot; to repair it.</p></div>';
       }
     </script>
     ${EDITOR_SCRIPT}
