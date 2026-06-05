@@ -15,8 +15,11 @@ export function processForPreview(code: string): string {
   //   - a default-exported function (named or anonymous) becomes App
   c = c.replace(/export\s+default\s+function\s+[A-Za-z0-9_]+/, "function App");
   c = c.replace(/export\s+default\s+function\s*\(/, "function App(");
-  //   - `export default App;` / `export default Foo;` → drop (App defined above)
-  c = c.replace(/export\s+default\s+[A-Za-z0-9_]+\s*;?/g, "");
+  //   - `export default Foo;` → alias Foo to App (NOT delete — that loses App).
+  //     `export default App;` is a no-op, just drop it.
+  c = c.replace(/export\s+default\s+([A-Za-z0-9_]+)\s*;?/g, (_m, name) =>
+    name === "App" ? "" : `const App = ${name};`,
+  );
   //   - `export default <expr>` (arrow etc.) → `const App = <expr>`
   c = c.replace(/export\s+default\s+/g, "const App = ");
   //   - named exports → plain declarations
