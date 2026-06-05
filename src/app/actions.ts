@@ -113,6 +113,22 @@ export async function acceptInvite(formData: FormData) {
   redirect(`/project/${data}`);
 }
 
+/** Delete a project from Drowa only (cascades to its files/context/versions/
+ *  github_link record). Does NOT touch any GitHub repo. RLS restricts to owner. */
+export async function deleteProject(formData: FormData) {
+  const id = String(formData.get("projectId") ?? "");
+  if (!id) return;
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  await supabase.from("projects").delete().eq("id", id);
+  revalidatePath("/");
+  revalidatePath("/projects");
+}
+
 export async function signOut() {
   const supabase = await createClient();
   await supabase.auth.signOut();

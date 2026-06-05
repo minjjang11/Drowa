@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { relativeTime } from "@/lib/versionMeta";
+import { DeleteProjectButton } from "@/components/DeleteProjectButton";
 import type { MemberRole, Project } from "@/lib/types";
 
 export default async function AllProjectsPage() {
@@ -39,19 +40,21 @@ export default async function AllProjectsPage() {
             const role = roleByProject.get(p.id) ?? "developer";
             const tag = role === "designer" ? "DESIGN" : "DEV";
             return (
-              <Link
-                key={p.id}
-                href={`/project/${p.id}`}
-                className="grad-hover group flex flex-col gap-3 rounded-[8px] bg-surface p-4 hover:-translate-y-0.5"
-              >
-                <div className="flex items-start justify-between">
-                  <span className="serif text-base italic text-foreground">{p.name}</span>
-                  <span className={`font-mono text-[9px] font-semibold tracking-wider ${tag === "DESIGN" ? "text-accent-2" : "text-accent"}`}>
-                    [{tag}]
-                  </span>
-                </div>
-                <span className="font-mono text-[11px] text-muted">{relativeTime(p.updated_at)}</span>
-              </Link>
+              <div key={p.id} className="group relative">
+                <DeleteProjectButton projectId={p.id} name={p.name} />
+                <Link
+                  href={`/project/${p.id}`}
+                  className="grad-hover flex flex-col gap-3 rounded-[8px] bg-surface p-4 hover:-translate-y-0.5"
+                >
+                  <div className="flex items-start justify-between">
+                    <span className="serif text-base text-foreground">{p.name}</span>
+                    <span className={`font-mono text-[9px] font-semibold tracking-wider ${tag === "DESIGN" ? "text-accent-2" : "text-accent"}`}>
+                      [{tag}]
+                    </span>
+                  </div>
+                  <span className="font-mono text-[11px] text-muted">{relativeTime(p.updated_at)}</span>
+                </Link>
+              </div>
             );
           })}
         </div>

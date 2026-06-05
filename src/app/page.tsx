@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { signOut } from "./actions";
 import { HomeHero } from "@/components/HomeHero";
 import { TemplateGallery } from "@/components/TemplateGallery";
+import { DeleteProjectButton } from "@/components/DeleteProjectButton";
 import { relativeTime } from "@/lib/versionMeta";
 import type { MemberRole, Project } from "@/lib/types";
 
@@ -60,22 +61,24 @@ export default async function HomePage() {
               const role = roleByProject.get(p.id) ?? "developer";
               const tag = role === "designer" ? "DESIGN" : "DEV";
               return (
-                <Link
-                  key={p.id}
-                  href={`/project/${p.id}`}
-                  className="grad-hover group flex w-56 shrink-0 flex-col gap-2 rounded-[10px] bg-surface p-4 hover:-translate-y-0.5"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="serif truncate text-base italic text-foreground">{p.name}</span>
-                    <span className={`shrink-0 font-mono text-[9px] font-semibold tracking-wider ${tag === "DESIGN" ? "text-accent-2" : "text-accent"}`}>
-                      [{tag}]
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 font-mono text-[11px] text-muted">
-                    <span>{relativeTime(p.updated_at)}</span>
-                    {linkedSet.has(p.id) && <span title="GitHub connected">⑂</span>}
-                  </div>
-                </Link>
+                <div key={p.id} className="group relative w-56 shrink-0">
+                  <DeleteProjectButton projectId={p.id} name={p.name} />
+                  <Link
+                    href={`/project/${p.id}`}
+                    className="grad-hover flex flex-col gap-2 rounded-[10px] bg-surface p-4 hover:-translate-y-0.5"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="serif truncate text-base text-foreground">{p.name}</span>
+                      <span className={`shrink-0 font-mono text-[9px] font-semibold tracking-wider ${tag === "DESIGN" ? "text-accent-2" : "text-accent"}`}>
+                        [{tag}]
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 font-mono text-[11px] text-muted">
+                      <span>{relativeTime(p.updated_at)}</span>
+                      {linkedSet.has(p.id) && <span title="GitHub connected">⑂</span>}
+                    </div>
+                  </Link>
+                </div>
               );
             })}
             {list.length > RECENT_LIMIT && (
