@@ -376,3 +376,99 @@ $$;
 
 grant execute on function get_invite(uuid)    to authenticated;
 grant execute on function accept_invite(uuid) to authenticated;
+
+-- Phase 4: Preview runtime + AI agent team (Perplexity intentionally omitted)
+
+create table if not exists ai_providers (
+  id           text primary key,
+  name         text not null,
+  role_default text not null,
+  enabled      boolean not null default true,
+  created_at   timestamptz not null default now()
+);
+
+insert into ai_providers (id, name, role_default, enabled) values
+  ('claude', 'Claude', 'builder', true),
+  ('gpt', 'GPT', 'qa', true),
+  ('gemini', 'Gemini', 'ux', true),
+  ('kimi', 'Kimi', 'codebase', true)
+on conflict (id) do update set
+  name = excluded.name,
+  role_default = excluded.role_default,
+  enabled = excluded.enabled;
+
+create table if not exists agent_members (
+  id           uuid primary key default gen_random_uuid(),
+  project_id   uuid not null references projects(id) on delete cascade,
+  display_name text not null,
+  model        text not null,
+  role         text not null check (role in ('builder', 'qa', 'ux', 'codebase')),
+  hired_by     uuid references auth.users(id) on delete set null,
+  active       boolean not null default true,
+  created_at   timestamptz not null default now()
+);
+
+create table if not exists agent_runs (
+  id          uuid primary key default gen_random_uuid(),
+  project_id  uuid not null references projects(id) on delete cascade,
+  message_id  uuid references messages(id) on delete set null,
+  role        text not null check (role in ('builder', 'qa', 'ux', 'codebase')),
+  model       text not null,
+  status      text not null check (status in ('idle', 'active', 'done', 'fallback', 'failed')),
+  output_ref  text,
+  chosen      boolean not null default false,
+  created_at  timestamptz not null default now()
+);
+
+create table if not exists preview_runtime (
+  project_id   uuid primary key references projects(id) on delete cascade,
+  mode         text not null check (mode in ('iframe', 'esbuild', 'webcontainer')),
+  last_boot_at timestamptz,
+  updated_at   timestamptz not null default now()
+);
+
+drop trigger if exists trg_preview_runtime_updated on preview_runtime;
+create trigger trg_preview_runtime_updated before update on preview_runtime
+  for each row execute function set_updated_at();
+
+create index if not exists idx_agent_members_project on agent_members(project_id);
+create index if not exists idx_agent_runs_project on agent_runs(project_id, created_at desc);
+
+alter table ai_providers    enable row level security;
+alter table agent_members   enable row level security;
+alter table agent_runs      enable row level security;
+alter table preview_runtime enable row level security;
+
+drop policy if exists ai_providers_select on ai_providers;
+create policy ai_providers_select on ai_providers for select
+  using (true);
+
+drop policy if exists agent_members_all on agent_members;
+create policy agent_members_all on agent_members for all
+  using (is_project_member(project_id)) with check (is_project_member(project_id));
+
+drop policy if exists agent_runs_all on agent_runs;
+create policy agent_runs_all on agent_runs for all
+  using (is_project_member(project_id)) with check (is_project_member(project_id));
+
+drop policy if exists preview_runtime_all on preview_runtime;
+create policy preview_runtime_all on preview_runtime for all
+  using (is_project_member(project_id)) with check (is_project_member(project_id));
+
+do $$
+begin
+  alter publication supabase_realtime add table agent_members;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table agent_runs;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table preview_runtime;
+exception when duplicate_object then null;
+end $$;

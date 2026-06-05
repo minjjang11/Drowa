@@ -20,7 +20,8 @@ function systemPrompt(role: AiRole): string {
 ${lens}
 
 OUTPUT CONTRACT — follow exactly:
-- The project renders a SINGLE React component in a sandboxed preview.
+- The default editable surface is App.tsx.
+- The preview routes simple files through iframe, multi-file SPAs through esbuild, and full-stack projects through WebContainers.
 - When the user asks for a UI/code change, return the COMPLETE, updated file as ONE \`\`\`tsx code block.
 
 CRITICAL — generate code in this exact format for the preview iframe:
@@ -65,6 +66,8 @@ export interface BuildContextParams {
   userPrompt: string;
   /** Optional reference image for "Match this style". */
   image?: { mediaType: string; data: string } | null;
+  /** Optional V3 agent-team orchestration note. */
+  agentNote?: string | null;
 }
 
 type Anthropic_MessageParam = Anthropic.MessageParam;
@@ -81,6 +84,7 @@ export function buildRequest(p: BuildContextParams) {
   const system: Anthropic.TextBlockParam[] = [
     { type: "text", text: systemPrompt(p.role) },
     { type: "text", text: designSystemPrompt(p.tokens) },
+    ...(p.agentNote ? [{ type: "text" as const, text: p.agentNote }] : []),
     {
       type: "text",
       text: `# Project context (context.md)\n\n${p.contextMd || "(empty — this is a new project)"}`,

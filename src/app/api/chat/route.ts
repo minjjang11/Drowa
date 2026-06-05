@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { claude, MODEL, buildRequest, extractCode, validateGeneratedCode } from "@/lib/claude";
+import { buildRequest, extractCode, validateGeneratedCode } from "@/lib/claude";
 import { processForPreview } from "@/lib/codeProcessor";
 import { snapshotProject } from "@/lib/versions";
 import { DEFAULT_TOKENS } from "@/lib/types";
+import { buildAgentPlan, finishAgentPlan } from "@/lib/agents";
+import { runAgentPipeline } from "@/lib/agentPipeline";
+import type { AgentActivity } from "@/lib/agents";
 import type { AiRole, DesignTokens, FileRow, Message, VersionTrigger } from "@/lib/types";
 
 const PREVIEW_PATH = "App.tsx";
@@ -75,6 +78,7 @@ export async function POST(req: Request) {
       content: m.content,
     }));
 
+  const agentPlan = buildAgentPlan(role, prompt);
   const { system, messages } = buildRequest({
     role,
     tokens,
@@ -83,45 +87,66 @@ export async function POST(req: Request) {
     recentMessages,
     userPrompt: prompt,
     image: imagePayload,
+    agentNote: agentPlan.systemNote,
   });
 
-  async function ask(msgs: typeof messages): Promise<string> {
-    const res = await claude.messages.create({
-      model: MODEL,
-      max_tokens: 8000,
-      system,
-      messages: msgs,
-    });
-    return res.content
-      .filter((b) => b.type === "text")
-      .map((b) => (b as { text: string }).text)
-      .join("\n");
-  }
-
   let reply: string;
+  let finalAgents: AgentActivity[] = agentPlan.activities;
+  let runRows: { id: string; role: string; model: string }[] = [];
+  if (!body.dryRun) {
+    try {
+      const { data } = await supabase
+        .from("agent_runs")
+        .insert(
+          agentPlan.activities.map((agent) => ({
+            project_id: projectId,
+            role: agent.role,
+            model: agent.provider,
+            status: "active",
+            output_ref: agent.detail,
+            chosen: false,
+          })),
+        )
+        .select("id, role, model");
+      runRows = (data as { id: string; role: string; model: string }[] | null) ?? [];
+    } catch {
+      // Phase 4 schema may not be applied yet; chat should still work.
+    }
+  }
   try {
-    reply = await ask(messages);
+    const result = await runAgentPipeline({
+      system,
+      messages,
+      plan: agentPlan,
+      userPrompt: prompt,
+    });
+    reply = result.reply;
+    finalAgents = result.activities;
 
     // Generation quality guard: validate the code block, auto-retry once.
     let code0 = extractCode(reply);
     if (code0) {
       const check = validateGeneratedCode(code0);
       if (!check.valid) {
-        const retryMessages = [
-          ...messages,
-          { role: "assistant" as const, content: reply },
-          {
-            role: "user" as const,
-            content: `Your previous response was not valid React/HTML code (${check.reason}). Return only the corrected complete code block in one \`\`\`tsx block, nothing else.`,
-          },
-        ];
-        const retryReply = await ask(retryMessages);
-        const code1 = extractCode(retryReply);
-        if (code1 && validateGeneratedCode(code1).valid) reply = retryReply;
+        finalAgents = finalAgents.map((agent) =>
+          agent.role === "builder"
+            ? { ...agent, status: "failed", detail: check.reason ?? "code failed validation" }
+            : agent,
+        );
       }
     }
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "Claude request failed";
+    if (runRows.length) {
+      await Promise.all(
+        runRows.map((row) =>
+          supabase
+            .from("agent_runs")
+            .update({ status: "failed", output_ref: "request failed" })
+            .eq("id", row.id),
+        ),
+      );
+    }
+    const msg = e instanceof Error ? e.message : "AI team request failed";
     return NextResponse.json({ error: msg }, { status: 502 });
   }
 
@@ -129,20 +154,63 @@ export async function POST(req: Request) {
   const codeValid = rawCode ? validateGeneratedCode(rawCode).valid : true;
   // Normalize to the iframe's bare-App format before storing/returning.
   const code = rawCode ? processForPreview(rawCode) : null;
+  const responseAgents = codeValid ? finalAgents : finishAgentPlan(agentPlan, true);
 
   // Dry run (safe auto-fix preview): return the proposal, touch nothing.
   if (body.dryRun) {
-    return NextResponse.json({ reply, code: code ?? null, invalid: !codeValid });
+    return NextResponse.json({
+      reply,
+      code: code ?? null,
+      invalid: !codeValid,
+      pipeline: agentPlan.pipeline,
+      agents: responseAgents,
+    });
   }
 
   // Persist the user turn and the AI turn (same channel).
-  await supabase.from("messages").insert([
+  const { data: savedMessages } = await supabase.from("messages").insert([
     { project_id: projectId, user_id: user.id, role, content: prompt },
     { project_id: projectId, user_id: null, role, content: reply },
-  ]);
+  ]).select("id, user_id");
+  const aiMessageId =
+    (savedMessages as { id: string; user_id: string | null }[] | null)?.find((m) => !m.user_id)?.id ?? null;
+
+  try {
+    if (runRows.length) {
+      await Promise.all(
+        responseAgents.map((agent) => {
+          const row = runRows.find((r) => r.model === agent.provider && r.role === agent.role);
+          if (!row) return Promise.resolve();
+          return supabase
+            .from("agent_runs")
+            .update({
+              message_id: aiMessageId,
+              status: agent.status,
+              output_ref: agent.detail,
+              chosen: agent.role === "builder" && /chosen|selected|prepared|revised/i.test(agent.detail),
+            })
+            .eq("id", row.id);
+        }),
+      );
+    } else {
+      await supabase.from("agent_runs").insert(
+        responseAgents.map((agent) => ({
+          project_id: projectId,
+          message_id: aiMessageId,
+          role: agent.role,
+          model: agent.provider,
+          status: agent.status,
+          output_ref: agent.detail,
+          chosen: agent.role === "builder" && /chosen|selected|prepared|revised/i.test(agent.detail),
+        })),
+      );
+    }
+  } catch {
+    // Phase 4 schema may not be applied yet; chat should still work.
+  }
 
   // If code was produced, reflect it in the preview file + log it to context.md.
-  if (code) {
+  if (code && codeValid) {
     // 3-8: snapshot the pre-change state before overwriting the file.
     const trigger: VersionTrigger = body.trigger === "auto_fix" ? "auto_fix" : "ai_generation";
     await snapshotProject(supabase, projectId, user.id, null, trigger);
@@ -168,5 +236,11 @@ export async function POST(req: Request) {
       .eq("project_id", projectId);
   }
 
-  return NextResponse.json({ reply, code: code ?? null, invalid: !codeValid });
+  return NextResponse.json({
+    reply,
+    code: code ?? null,
+    invalid: !codeValid,
+    pipeline: agentPlan.pipeline,
+    agents: responseAgents,
+  });
 }

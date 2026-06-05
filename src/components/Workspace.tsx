@@ -4,12 +4,24 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Preview, type PreviewHandle } from "./Preview";
+import { EsbuildPreview } from "./EsbuildPreview";
+import { WebContainerPreview } from "./WebContainerPreview";
+import { AgentActivityStrip } from "./AgentActivityStrip";
 import { PropertyPanel } from "./PropertyPanel";
 import { CodePanel } from "./CodePanel";
 import { extractJsxBlock, insertAfterBlock, removeBlock } from "@/lib/jsxTransform";
 import { relativeTime } from "@/lib/versionMeta";
 import { bundleProject } from "@/lib/bundler";
 import { buildStandaloneHtml } from "@/lib/standalone";
+import { decidePreviewRuntime } from "@/lib/previewRuntime";
+import {
+  buildAgentPlan,
+  DEFAULT_AGENT_TEAM,
+  type AgentActivity,
+  type AgentProvider,
+  type AgentRole,
+  type AgentStatus,
+} from "@/lib/agents";
 import { useI18n } from "@/lib/i18n";
 import { BlurText } from "./BlurText";
 import { DiffEditor } from "@monaco-editor/react";
@@ -68,6 +80,32 @@ const DEVICE_WIDTH: Record<DeviceMode, string> = {
   mobile: "390px",
 };
 
+const AGENT_META: Record<AgentProvider, { id: string; name: string; role: AgentRole }> = {
+  claude: { id: "claude-builder", name: "Claude", role: "builder" },
+  gpt: { id: "gpt-qa", name: "GPT", role: "qa" },
+  gemini: { id: "gemini-ux", name: "Gemini", role: "ux" },
+  kimi: { id: "kimi-codebase", name: "Kimi", role: "codebase" },
+};
+
+function activityFromRun(row: {
+  model?: string;
+  role?: string;
+  status?: string;
+  output_ref?: string | null;
+}): AgentActivity | null {
+  const provider = row.model as AgentProvider;
+  const meta = AGENT_META[provider];
+  if (!meta) return null;
+  return {
+    id: meta.id,
+    name: meta.name,
+    provider,
+    role: (row.role as AgentRole) ?? meta.role,
+    status: (row.status as AgentStatus) ?? "idle",
+    detail: row.output_ref || "working",
+  };
+}
+
 export function Workspace({
   projectId,
   projectName,
@@ -115,10 +153,11 @@ export function Workspace({
     return () => clearTimeout(id);
   }, [code]);
   // The self-contained bundle the iframe renders — inlines local imports.
-  const previewBundle = useMemo(
-    () => bundleProject([...depFiles, { path: "App.tsx", content: debouncedCode }]),
+  const projectFiles = useMemo(
+    () => [...depFiles, { path: "App.tsx", content: debouncedCode }],
     [depFiles, debouncedCode],
   );
+  const previewBundle = useMemo(() => bundleProject(projectFiles), [projectFiles]);
   const hasContent = code.trim() !== "";
   const [overrides, setOverrides] = useState<Overrides>(initialOverrides);
   const [contextMd, setContextMd] = useState(initialContextMd);
@@ -149,6 +188,14 @@ export function Workspace({
   const [previewVersion, setPreviewVersion] = useState<{ v: VersionRow; snapshot: VersionSnapshot } | null>(null);
   const [restoreTarget, setRestoreTarget] = useState<VersionRow | null>(null);
   const [diffTarget, setDiffTarget] = useState<{ v: VersionRow; snapshot: VersionSnapshot } | null>(null);
+  const activePreviewFiles = useMemo(
+    () => (previewVersion ? previewVersion.snapshot.files : projectFiles),
+    [previewVersion, projectFiles],
+  );
+  const activePreviewRuntime = useMemo(
+    () => decidePreviewRuntime(activePreviewFiles),
+    [activePreviewFiles],
+  );
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tokenSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -156,6 +203,7 @@ export function Workspace({
   const [design, setDesign] = useState<ChatMessage[]>(initialDesign);
   const [busy, setBusy] = useState<AiRole | null>(null);
   const [status, setStatus] = useState<Status>("ready");
+  const [agentActivities, setAgentActivities] = useState<AgentActivity[]>(DEFAULT_AGENT_TEAM);
 
   const [editMode, setEditMode] = useState(false);
   const [selection, setSelection] = useState<Selection | null>(null);
@@ -164,6 +212,7 @@ export function Workspace({
   const [designOpen, setDesignOpen] = useState(myRole !== "developer");
   const [device, setDevice] = useState<DeviceMode>("desktop");
   const [tab, setTab] = useState<"preview" | "code">("preview");
+  const [primaryPrompt, setPrimaryPrompt] = useState("");
 
   const previewRef = useRef<PreviewHandle>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -303,6 +352,28 @@ export function Workspace({
         (payload) => {
           const row = payload.new as { tokens: DesignTokens };
           if (row?.tokens) setTokens(row.tokens);
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "agent_runs", filter: `project_id=eq.${projectId}` },
+        (payload) => {
+          const next = activityFromRun(
+            payload.new as {
+              model?: string;
+              role?: string;
+              status?: string;
+              output_ref?: string | null;
+            },
+          );
+          if (!next) return;
+          setAgentActivities((prev) => {
+            const idx = prev.findIndex((agent) => agent.provider === next.provider);
+            if (idx < 0) return [...prev, next];
+            const copy = [...prev];
+            copy[idx] = next;
+            return copy;
+          });
         },
       )
       .subscribe((status) => {
@@ -698,6 +769,7 @@ export function Workspace({
     setStatus("generating");
     setRefineHints(null);
     setPreviewError(null);
+    setAgentActivities(buildAgentPlan(role, prompt).activities);
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
@@ -711,6 +783,7 @@ export function Workspace({
         return;
       }
       append((prev) => [...prev, { sender: "ai", content: data.reply }]);
+      if (Array.isArray(data.agents)) setAgentActivities(data.agents);
       if (data.code) {
         setCode(data.code);
         setGhDirty(true);
@@ -758,6 +831,7 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
 
     setBusy(role);
     setStatus("generating");
+    setAgentActivities(buildAgentPlan(role, fixPrompt).activities);
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
@@ -766,6 +840,7 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
         body: JSON.stringify({ projectId, role, prompt: fixPrompt, trigger: "auto_fix", dryRun: true }),
       });
       const data = await res.json();
+      if (Array.isArray(data.agents)) setAgentActivities(data.agents);
       if (res.ok && data.code && !data.invalid) {
         setPendingFix({ proposed: data.code, reply: data.reply ?? "" });
       } else {
@@ -818,6 +893,21 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
     await supabase.from("context_md").update({ content: nextMd }).eq("project_id", projectId);
     flashStatus("saved");
   }
+
+  function submitPrimaryPrompt(e: React.FormEvent) {
+    e.preventDefault();
+    const prompt = primaryPrompt.trim();
+    if (!prompt || busy) return;
+    setPrimaryPrompt("");
+    setDevOpen(true);
+    send("dev_ai", prompt);
+  }
+
+  const showAgentStrip =
+    hasContent &&
+    (busy !== null ||
+      status === "generating" ||
+      agentActivities.some((agent) => agent.status === "active" || agent.status === "failed" || agent.status === "fallback"));
 
   const tabBtn = (id: "preview" | "code", label: string) => (
     <button
@@ -938,6 +1028,72 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
             </div>
           )}
 
+          {hasContent && !previewVersion && (
+            <div className="border-b border-border bg-background px-3 py-2">
+              {previewError ? (
+                <div className="liquid-glass flex items-center justify-between gap-3 rounded-[8px] px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="serif text-[16px] italic text-foreground">Preview needs repair</p>
+                    <p className="truncate font-mono text-[10px] text-muted">
+                      {previewError.message.split("\n")[0].slice(0, 120)}
+                    </p>
+                  </div>
+                  <button
+                    onClick={fixError}
+                    disabled={busy !== null}
+                    className="shrink-0 rounded-[5px] bg-accent px-3 py-1.5 font-mono text-[11px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                  >
+                    Fix automatically
+                  </button>
+                </div>
+              ) : busy !== null || status === "generating" ? (
+                <div className="liquid-glass flex items-center gap-2 rounded-[8px] px-3 py-2">
+                  <span className="amber-pulse h-1.5 w-1.5 rounded-full bg-accent" />
+                  <p className="serif text-[16px] italic text-foreground">AI team is building</p>
+                  <span className="font-mono text-[10px] text-muted">Preview will update when the run is ready</span>
+                </div>
+              ) : initialGithubLinked && ghDirty ? (
+                <div className="liquid-glass flex items-center justify-between gap-3 rounded-[8px] px-3 py-2">
+                  <div>
+                    <p className="serif text-[16px] italic text-foreground">Changes are ready</p>
+                    <p className="font-mono text-[10px] text-muted">Sync this project back to GitHub when you are done reviewing.</p>
+                  </div>
+                  <button
+                    onClick={syncToGithub}
+                    disabled={ghBusy}
+                    className="shrink-0 rounded-[5px] bg-accent px-3 py-1.5 font-mono text-[11px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                  >
+                    {ghBusy ? "Syncing..." : "Sync changes"}
+                  </button>
+                </div>
+              ) : (
+                <form onSubmit={submitPrimaryPrompt} className="liquid-glass flex items-center gap-2 rounded-[8px] px-2 py-2">
+                  <input
+                    value={primaryPrompt}
+                    onChange={(e) => setPrimaryPrompt(e.target.value)}
+                    placeholder="What should we improve next?"
+                    className="min-w-0 flex-1 bg-transparent px-2 font-sans text-sm text-foreground outline-none placeholder:text-muted"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!primaryPrompt.trim()}
+                    className="rounded-[5px] bg-accent px-3 py-1.5 font-mono text-[11px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+                  >
+                    Refine
+                  </button>
+                </form>
+              )}
+            </div>
+          )}
+
+          {showAgentStrip && (
+            <AgentActivityStrip
+              agents={agentActivities}
+              runtime={activePreviewRuntime}
+              busy={busy !== null || status === "generating"}
+            />
+          )}
+
           <div className="flex-1 overflow-auto bg-highlight p-3">
             {tab === "preview" ? (
               <div
@@ -946,15 +1102,34 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
                 }`}
                 style={{ maxWidth: DEVICE_WIDTH[device] }}
               >
-                <Preview
-                  ref={previewRef}
-                  code={previewVersion ? bundleProject(previewVersion.snapshot.files) : previewBundle}
-                  overrides={overrides}
-                  editMode={editMode && !previewVersion}
-                  onSelect={setSelection}
-                  onMove={handleMove}
-                  onError={handlePreviewError}
-                />
+                {activePreviewRuntime.mode === "webcontainer" ? (
+                  <WebContainerPreview
+                    files={activePreviewFiles}
+                    editMode={editMode && !previewVersion}
+                    onError={handlePreviewError}
+                  />
+                ) : activePreviewRuntime.mode === "esbuild" ? (
+                  <EsbuildPreview
+                    ref={previewRef}
+                    files={activePreviewFiles}
+                    entry={activePreviewRuntime.entry}
+                    overrides={overrides}
+                    editMode={editMode && !previewVersion}
+                    onSelect={setSelection}
+                    onMove={handleMove}
+                    onError={handlePreviewError}
+                  />
+                ) : (
+                  <Preview
+                    ref={previewRef}
+                    code={previewVersion ? bundleProject(previewVersion.snapshot.files) : previewBundle}
+                    overrides={overrides}
+                    editMode={editMode && !previewVersion}
+                    onSelect={setSelection}
+                    onMove={handleMove}
+                    onError={handlePreviewError}
+                  />
+                )}
                 <div className="vignette pointer-events-none absolute inset-0 rounded-[6px]" />
 
                 {/* P4 — clean empty state before anything is built. */}
@@ -976,32 +1151,6 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
                   />
                 )}
 
-                {previewError && (
-                  <div className="liquid-glass-strong absolute inset-x-0 bottom-0 z-10 border-t border-error p-4">
-                    <p className="mb-1 font-mono text-[10px] uppercase tracking-wider text-error">{t("somethingWrong")}</p>
-                    <p className="mb-3 line-clamp-1 font-mono text-[11px] leading-snug text-muted">
-                      {previewError.message.split("\n")[0].slice(0, 140)}
-                    </p>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={fixError}
-                        disabled={busy !== null}
-                        className="rounded-[4px] bg-accent px-3 py-1.5 font-mono text-[11px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-                      >
-                        {t("fixAuto")}
-                      </button>
-                      <button
-                        onClick={() => {
-                          setPreviewError(null);
-                          setStatus("ready");
-                        }}
-                        className="rounded-[4px] px-3 py-1.5 font-mono text-[11px] text-muted transition-colors hover:text-foreground"
-                      >
-                        {t("dismiss")}
-                      </button>
-                    </div>
-                  </div>
-                )}
               </div>
             ) : (
               <div className="flex h-full flex-col overflow-hidden rounded-[6px] border border-border bg-surface">

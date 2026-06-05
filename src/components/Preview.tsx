@@ -136,11 +136,11 @@ function buildSrcDoc(code: string): string {
   <head>
     <meta charset="utf-8" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&display=swap" rel="stylesheet" />
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link crossorigin href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <script crossorigin src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <style>
       html,body,#root{height:100%;margin:0;}
       [data-drowa-selected]{outline:2px solid #0f0f0f !important;outline-offset:1px;}
@@ -166,7 +166,7 @@ function buildSrcDoc(code: string): string {
           if (this.state.err) {
             // Friendly one-liner in the preview; full detail goes to the parent.
             return React.createElement("div", { style: { padding: "24px", font: "14px ui-sans-serif,system-ui", color: "#888880" } },
-              React.createElement("p", { style: { color: "#f5f5f0", margin: 0 } }, "Something went wrong rendering this."),
+              React.createElement("p", { style: { color: "#0f0f0f", margin: 0 } }, "Something went wrong rendering this."),
               React.createElement("p", { style: { margin: "6px 0 0" } }, "Use \\"Fix automatically\\" to repair it."));
           }
           return this.props.children;
@@ -185,7 +185,7 @@ function buildSrcDoc(code: string): string {
         __report(err);
         document.getElementById("root").innerHTML =
           '<div style="padding:24px;font:14px ui-sans-serif,system-ui;color:#888880">' +
-          '<p style="color:#f5f5f0;margin:0">Something went wrong rendering this.</p>' +
+          '<p style="color:#0f0f0f;margin:0">Something went wrong rendering this.</p>' +
           '<p style="margin:6px 0 0">Use &quot;Fix automatically&quot; to repair it.</p></div>';
       }
     </script>
@@ -195,7 +195,7 @@ function buildSrcDoc(code: string): string {
 }
 
 /** Minimal in-iframe visual editor: ids, click-select, drag-move, style apply. */
-const EDITOR_SCRIPT = `<script>
+export const EDITOR_SCRIPT = `<script>
 (function () {
   // Layer 1 — runtime + promise errors inside the preview.
   window.addEventListener("error", function (e) {

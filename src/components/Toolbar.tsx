@@ -4,16 +4,14 @@ import { useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useI18n, type TKey } from "@/lib/i18n";
-import { Tooltip } from "./Tooltip";
 import type { DeviceMode, Status } from "@/lib/types";
 
-const DEVICES: { id: DeviceMode; label: string; icon: string }[] = [
-  { id: "desktop", label: "Desktop", icon: "▢" },
-  { id: "tablet", label: "Tablet", icon: "▯" },
-  { id: "mobile", label: "Mobile", icon: "▮" },
+const DEVICES: { id: DeviceMode; label: string }[] = [
+  { id: "desktop", label: "Desktop" },
+  { id: "tablet", label: "Tablet" },
+  { id: "mobile", label: "Mobile" },
 ];
 
-// Only three states surface to the user: Ready / Building… / Error.
 const STATUS_META: Record<Status, { dot: string; key: TKey; pill: string; spin?: boolean }> = {
   ready: { dot: "bg-[#16a34a]", key: "ready", pill: "bg-[#e8f5e9] text-[#16a34a]" },
   generating: { dot: "bg-[#b45309]", key: "building", pill: "bg-[#fef3e2] text-[#b45309]", spin: true },
@@ -21,7 +19,6 @@ const STATUS_META: Record<Status, { dot: string; key: TKey; pill: string; spin?:
   error: { dot: "bg-[#dc2626]", key: "error", pill: "bg-[#fef2f2] text-[#dc2626]" },
 };
 
-// KO / EN pill switcher.
 function LangToggle() {
   const { lang, setLang } = useI18n();
   return (
@@ -41,9 +38,7 @@ function LangToggle() {
   );
 }
 
-function InvitePopover({ projectId }: { projectId: string }) {
-  const { t } = useI18n();
-  const [open, setOpen] = useState(false);
+function InviteTool({ projectId }: { projectId: string }) {
   const [role, setRole] = useState<"developer" | "designer">("designer");
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -68,42 +63,109 @@ function InvitePopover({ projectId }: { projectId: string }) {
   }
 
   return (
+    <div className="rounded-[6px] border border-border bg-background p-2">
+      <p className="font-mono text-[10px] uppercase tracking-wider text-muted">Invite</p>
+      <div className="mt-1 flex gap-1 rounded-[5px] border border-border bg-surface p-0.5">
+        {(["developer", "designer"] as const).map((r) => (
+          <button
+            key={r}
+            onClick={() => setRole(r)}
+            className={`flex-1 rounded-[4px] px-2 py-1 font-mono text-[10px] capitalize transition-colors ${
+              role === r ? "bg-accent text-white" : "text-muted hover:text-foreground"
+            }`}
+          >
+            {r}
+          </button>
+        ))}
+      </div>
+      <button
+        onClick={copyLink}
+        disabled={busy}
+        className="mt-2 w-full rounded-[5px] bg-accent px-2 py-1.5 font-mono text-[10px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+      >
+        {copied ? "Copied" : busy ? "..." : "Copy invite link"}
+      </button>
+    </div>
+  );
+}
+
+function ToolsMenu({
+  projectId,
+  github,
+  onSync,
+  onPull,
+  onSaveVersion,
+  onOpenVersions,
+  onOpenInspiration,
+  onOpenTemplates,
+  onOpenDesign,
+  onExport,
+  onDeploy,
+}: {
+  projectId: string;
+  github: { linked: boolean; dirty: boolean; busy: boolean };
+  onSync: () => void;
+  onPull: () => void;
+  onSaveVersion: () => void;
+  onOpenVersions: () => void;
+  onOpenInspiration: () => void;
+  onOpenTemplates: () => void;
+  onOpenDesign: () => void;
+  onExport: () => void;
+  onDeploy: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const item =
+    "block w-full rounded-[4px] px-3 py-1.5 text-left font-mono text-[11px] text-foreground transition-colors hover:bg-highlight disabled:text-muted";
+
+  return (
     <div className="relative">
-      <Tooltip label={t("inviteTip")}>
-        <button
-          onClick={() => setOpen((v) => !v)}
-          className="glow-hover flex h-7 items-center gap-1 rounded-[4px] border border-border bg-background px-2 text-sm text-foreground transition-colors hover:border-accent hover:text-accent"
-        >
-          👤 <span className="font-mono text-[11px]">{t("invite")}</span>
-        </button>
-      </Tooltip>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="glow-hover rounded-[4px] border border-border bg-background px-2.5 py-1 font-mono text-[11px] text-foreground transition-colors hover:border-accent"
+      >
+        Tools
+      </button>
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="grad-border absolute right-0 top-9 z-50 w-60 rounded-[8px] bg-surface p-4 anim-modal shadow-[0_8px_32px_rgba(0,0,0,0.12)]">
-            <p className="serif text-sm italic text-foreground">Invite a teammate</p>
-            <p className="mt-3 font-mono text-[10px] uppercase tracking-wider text-muted">Role</p>
-            <div className="mt-1.5 flex gap-1 rounded-[6px] border border-border bg-background p-0.5">
-              {(["developer", "designer"] as const).map((r) => (
-                <button
-                  key={r}
-                  onClick={() => setRole(r)}
-                  className={`flex-1 rounded-[4px] px-2 py-1 font-mono text-[11px] capitalize transition-colors ${
-                    role === r ? "bg-accent text-white" : "text-muted hover:text-foreground"
-                  }`}
-                >
-                  {r}
+          <div className="liquid-glass-strong absolute right-0 top-9 z-50 w-60 rounded-[8px] p-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.12)]">
+            {github.linked && (
+              <>
+                <button disabled={github.busy} onClick={onPull} className={item}>
+                  Pull from GitHub
                 </button>
-              ))}
-            </div>
-            <button
-              onClick={copyLink}
-              disabled={busy}
-              className="mt-3 w-full rounded-[6px] bg-accent px-3 py-2 font-mono text-[11px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-            >
-              {copied ? "✓ Copied!" : busy ? "…" : "Copy invite link"}
+                <button disabled={github.busy} onClick={onSync} className={item}>
+                  Sync to GitHub
+                </button>
+                <div className="my-1 border-t border-border" />
+              </>
+            )}
+            <button onClick={onOpenDesign} className={item}>
+              Design system
             </button>
-            <p className="mt-2 text-center font-mono text-[10px] text-muted">Link expires in 7 days</p>
+            <button onClick={onOpenTemplates} className={item}>
+              Templates
+            </button>
+            <button onClick={onOpenInspiration} className={item}>
+              Inspiration
+            </button>
+            <div className="my-1 border-t border-border" />
+            <button onClick={onSaveVersion} className={item}>
+              Save version
+            </button>
+            <button onClick={onOpenVersions} className={item}>
+              Version history
+            </button>
+            <div className="my-1 border-t border-border" />
+            <button onClick={onExport} className={item}>
+              Export code
+            </button>
+            <button onClick={onDeploy} className={item}>
+              Download site
+            </button>
+            <div className="my-1 border-t border-border" />
+            <InviteTool projectId={projectId} />
           </div>
         </>
       )}
@@ -144,7 +206,6 @@ export function Toolbar({
   github: { linked: boolean; dirty: boolean; busy: boolean };
   onSync: () => void;
   onPull: () => void;
-  /** Progressive disclosure: hide build/ship extras until there's something to work on. */
   hasContent: boolean;
 }) {
   const { t } = useI18n();
@@ -163,8 +224,7 @@ export function Toolbar({
 
   return (
     <header className="liquid-glass sticky top-0 z-30 flex h-11 shrink-0 items-center justify-between border-b border-[rgba(0,0,0,0.06)] px-3">
-      {/* Left: logo + editable name */}
-      <div className="flex items-center gap-2">
+      <div className="flex min-w-0 items-center gap-2">
         <Link href="/" className="font-mono text-xs font-semibold text-foreground transition-colors hover:text-accent">
           drowa
         </Link>
@@ -176,96 +236,49 @@ export function Toolbar({
           onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
           className="serif w-44 rounded-[3px] border border-transparent bg-transparent px-1.5 py-0.5 text-base italic text-foreground outline-none transition-colors hover:border-border focus:border-accent"
         />
-        <span
-          className="flex items-center gap-1.5 font-mono text-[10px] text-muted"
-          title="GitHub status"
-        >
-          <span
-            className={`h-1.5 w-1.5 rounded-full ${
-              !github.linked ? "bg-muted" : github.dirty ? "bg-accent" : "bg-success"
-            }`}
-          />
+        <span className="flex items-center gap-1.5 font-mono text-[10px] text-muted" title="GitHub status">
+          <span className={`h-1.5 w-1.5 rounded-full ${!github.linked ? "bg-muted" : github.dirty ? "bg-accent" : "bg-success"}`} />
           {!github.linked ? "Not connected" : github.dirty ? "Changes" : "Synced"}
         </span>
-        {github.linked && hasContent && (
-          <div className="flex items-center gap-1">
-            <Tooltip label={t("pullTip")}>
-              <button
-                onClick={onPull}
-                disabled={github.busy}
-                className="glow-hover rounded-[3px] border border-border bg-surface px-2 py-0.5 font-mono text-[10px] text-muted transition-colors hover:border-accent hover:text-foreground disabled:opacity-50"
-              >
-                {t("pull")}
-              </button>
-            </Tooltip>
-            <Tooltip label={t("syncTip")}>
-              <button
-                onClick={onSync}
-                disabled={github.busy}
-                className="glow-hover rounded-[3px] border border-border bg-surface px-2 py-0.5 font-mono text-[10px] text-muted transition-colors hover:border-accent hover:text-foreground disabled:opacity-50"
-              >
-                {github.busy ? "…" : `${t("sync")} ↗`}
-              </button>
-            </Tooltip>
-          </div>
-        )}
       </div>
 
-      {/* Center: device pill switcher */}
       <div className="flex items-center gap-0.5 rounded-[5px] border border-border bg-background p-0.5">
         {DEVICES.map((d) => (
           <button
             key={d.id}
             onClick={() => onDevice(d.id)}
             title={d.label}
-            className={`flex items-center gap-1.5 rounded-[3px] px-2.5 py-1 font-mono text-[11px] transition-colors duration-150 ${
+            className={`rounded-[3px] px-2.5 py-1 font-mono text-[11px] transition-colors duration-150 ${
               device === d.id
-                ? "bg-surface-elevated text-accent shadow-[0_1px_2px_rgba(0,0,0,0.4)]"
+                ? "bg-surface-elevated text-accent shadow-[0_1px_2px_rgba(0,0,0,0.08)]"
                 : "text-muted hover:text-foreground"
             }`}
           >
-            <span>{d.icon}</span>
             {d.label}
           </button>
         ))}
       </div>
 
-      {/* Right: build/ship tools (revealed once there's content) + lang + status */}
       <div className="flex items-center gap-2">
-        {hasContent && (
-          <>
-            <Tooltip label={t("saveVersionTip")}>
-              <button onClick={onSaveVersion} className="glow-hover flex h-7 w-7 items-center justify-center rounded-[4px] border border-border bg-background text-sm text-foreground transition-colors hover:border-accent">⊕</button>
-            </Tooltip>
-            <Tooltip label={t("versionsTip")}>
-              <button onClick={onOpenVersions} className="glow-hover flex h-7 w-7 items-center justify-center rounded-[4px] border border-border bg-background text-sm text-foreground transition-colors hover:border-accent">⟲</button>
-            </Tooltip>
-            <Tooltip label={t("inspirationTip")}>
-              <button onClick={onOpenInspiration} className="glow-hover flex h-7 w-7 items-center justify-center rounded-[4px] border border-border bg-background text-sm text-accent-2 transition-colors hover:border-accent">✦</button>
-            </Tooltip>
-            <Tooltip label={t("templatesTip")}>
-              <button onClick={onOpenTemplates} className="glow-hover flex h-7 w-7 items-center justify-center rounded-[4px] border border-border bg-background text-sm text-foreground transition-colors hover:border-accent">▦</button>
-            </Tooltip>
-            <Tooltip label={t("designTip")}>
-              <button onClick={onOpenDesign} className="glow-hover flex h-7 w-7 items-center justify-center rounded-[4px] border border-border bg-background text-sm text-accent transition-colors hover:border-accent">◈</button>
-            </Tooltip>
-          </>
-        )}
         <div className={`flex items-center gap-1.5 rounded-[9999px] px-2.5 py-1 font-mono text-[11px] ${meta.pill}`}>
           <span className={`h-1.5 w-1.5 rounded-full ${meta.dot} ${meta.spin ? "amber-pulse" : ""}`} />
           {t(meta.key)}
         </div>
         <LangToggle />
         {hasContent && (
-          <>
-            <InvitePopover projectId={projectId} />
-            <Tooltip label={t("exportTip")}>
-              <button onClick={onExport} className="btn-grad rounded-[4px] px-2.5 py-1 font-mono text-[11px] text-muted hover:text-foreground">{t("export")}</button>
-            </Tooltip>
-            <Tooltip label={t("deployTip")}>
-              <button onClick={onDeploy} className="btn-grad rounded-[4px] px-2.5 py-1 font-mono text-[11px] font-medium text-foreground">{t("deploy")}</button>
-            </Tooltip>
-          </>
+          <ToolsMenu
+            projectId={projectId}
+            github={github}
+            onSync={onSync}
+            onPull={onPull}
+            onSaveVersion={onSaveVersion}
+            onOpenVersions={onOpenVersions}
+            onOpenInspiration={onOpenInspiration}
+            onOpenTemplates={onOpenTemplates}
+            onOpenDesign={onOpenDesign}
+            onExport={onExport}
+            onDeploy={onDeploy}
+          />
         )}
       </div>
     </header>
