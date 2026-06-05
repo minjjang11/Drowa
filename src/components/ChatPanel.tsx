@@ -3,7 +3,11 @@
 import { useState, useRef, useEffect } from "react";
 import type { AiRole } from "@/lib/types";
 import { QuickActionsBar } from "./QuickActionsBar";
+import { useI18n } from "@/lib/i18n";
 import type { QuickAction } from "@/lib/quickActions";
+
+// Only render the most recent messages — keeps the DOM light in long sessions.
+const RENDER_LIMIT = 50;
 
 export interface ChatMessage {
   sender: "user" | "ai";
@@ -40,9 +44,11 @@ export function ChatPanel({
   errorCard?: { message: string } | null;
   onFix?: () => void;
 }) {
+  const { t } = useI18n();
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const visible = messages.length > RENDER_LIMIT ? messages.slice(-RENDER_LIMIT) : messages;
 
   useEffect(() => {
     if (prefill && prefill.text) {
@@ -81,12 +87,10 @@ export function ChatPanel({
       <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-3">
         {messages.length === 0 && (
           <p className="font-mono text-[11px] leading-relaxed text-muted">
-            {role === "dev_ai"
-              ? "Ask about logic, structure, behavior."
-              : "Ask about color, layout, typography."}
+            {role === "dev_ai" ? t("askDev") : t("askDesign")}
           </p>
         )}
-        {messages.map((m, i) => (
+        {visible.map((m, i) => (
           <div key={i} className="space-y-1">
             <span className={`font-mono text-[9px] font-semibold tracking-wider ${m.sender === "user" ? "text-muted" : tagColor}`}>
               {m.sender === "user" ? "YOU" : tag}
@@ -173,7 +177,7 @@ export function ChatPanel({
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) submit(e);
           }}
-          placeholder="describe a change…"
+          placeholder={t("chatPlaceholder")}
           className="input-dark w-full resize-none rounded-[4px] px-2.5 py-2 font-mono text-[12px] disabled:opacity-50"
         />
       </form>

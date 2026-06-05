@@ -6,20 +6,25 @@ import { createClient } from "@/lib/supabase/client";
 import { Preview, type PreviewHandle } from "./Preview";
 import { PropertyPanel } from "./PropertyPanel";
 import { CodePanel } from "./CodePanel";
-import { VersionHistoryPanel } from "./VersionHistoryPanel";
-import { DiffModal } from "./DiffModal";
 import { extractJsxBlock, insertAfterBlock, removeBlock } from "@/lib/jsxTransform";
 import { relativeTime } from "@/lib/versionMeta";
 import { bundleProject } from "@/lib/bundler";
 import { buildStandaloneHtml } from "@/lib/standalone";
+import { useI18n } from "@/lib/i18n";
 import { DiffEditor } from "@monaco-editor/react";
+
+const VersionHistoryPanel = dynamic(() => import("./VersionHistoryPanel").then((m) => m.VersionHistoryPanel), { ssr: false });
+const DiffModal = dynamic(() => import("./DiffModal").then((m) => m.DiffModal), { ssr: false });
 import { ChatPanel, type ChatMessage } from "./ChatPanel";
 import { Toolbar } from "./Toolbar";
 import { FileTree } from "./FileTree";
 import { ContextEditor } from "./ContextEditor";
-import { DesignSystemPanel } from "./DesignSystemPanel";
-import { TemplateLibrary } from "./TemplateLibrary";
-import { InspirationLibrary } from "./InspirationLibrary";
+import dynamic from "next/dynamic";
+
+// Lazy-loaded heavy panels — JS only fetched when the user opens them.
+const DesignSystemPanel = dynamic(() => import("./DesignSystemPanel").then((m) => m.DesignSystemPanel), { ssr: false });
+const TemplateLibrary = dynamic(() => import("./TemplateLibrary").then((m) => m.TemplateLibrary), { ssr: false });
+const InspirationLibrary = dynamic(() => import("./InspirationLibrary").then((m) => m.InspirationLibrary), { ssr: false });
 import {
   insertTemplate,
   toTemplateCode,
@@ -95,17 +100,25 @@ export function Workspace({
   myRole?: MemberRole;
 }) {
   const router = useRouter();
+  const { t } = useI18n();
   const [code, setCode] = useState(initialCode);
   // Dependency files (everything but the editable App.tsx entry) for bundling.
   const depFiles = useMemo(
     () => initialFiles.filter((f) => f.path !== "App.tsx"),
     [initialFiles],
   );
+  // Debounce the entry 300ms so the preview doesn't re-bundle on every keystroke.
+  const [debouncedCode, setDebouncedCode] = useState(initialCode);
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedCode(code), 300);
+    return () => clearTimeout(id);
+  }, [code]);
   // The self-contained bundle the iframe renders — inlines local imports.
   const previewBundle = useMemo(
-    () => bundleProject([...depFiles, { path: "App.tsx", content: code }]),
-    [depFiles, code],
+    () => bundleProject([...depFiles, { path: "App.tsx", content: debouncedCode }]),
+    [depFiles, debouncedCode],
   );
+  const hasContent = code.trim() !== "";
   const [overrides, setOverrides] = useState<Overrides>(initialOverrides);
   const [contextMd, setContextMd] = useState(initialContextMd);
   const [contextUpdatedAt, setContextUpdatedAt] = useState(initialContextUpdatedAt);
@@ -817,7 +830,7 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
   );
 
   return (
-    <div className="flex h-screen flex-col bg-background">
+    <div className="relative flex h-screen flex-col bg-background">
       <Toolbar
         projectId={projectId}
         projectName={projectName}
@@ -834,7 +847,18 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
         github={{ linked: initialGithubLinked, dirty: ghDirty, busy: ghBusy }}
         onSync={syncToGithub}
         onPull={() => pullFromGithub()}
+        hasContent={hasContent}
       />
+
+      {/* Step 1 — empty project: nothing but the prompt. */}
+      {!hasContent && !previewVersion && (
+        <EmptyPrompt
+          title={t("emptyPrompt")}
+          placeholder={t("promptPlaceholder")}
+          busy={busy !== null}
+          onSubmit={(p) => send("dev_ai", p)}
+        />
+      )}
 
       <div className="flex flex-1 overflow-hidden">
         <FileTree
@@ -953,7 +977,7 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
 
                 {previewError && (
                   <div className="absolute inset-x-0 bottom-0 z-10 border-t border-error bg-[#0d0d0d]/95 p-4 backdrop-blur-sm">
-                    <p className="mb-1 font-mono text-[10px] uppercase tracking-wider text-error">Something went wrong</p>
+                    <p className="mb-1 font-mono text-[10px] uppercase tracking-wider text-error">{t("somethingWrong")}</p>
                     <p className="mb-3 line-clamp-1 font-mono text-[11px] leading-snug text-muted">
                       {previewError.message.split("\n")[0].slice(0, 140)}
                     </p>
@@ -963,7 +987,7 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
                         disabled={busy !== null}
                         className="rounded-[4px] bg-accent px-3 py-1.5 font-mono text-[11px] font-medium text-[#0d0d0d] transition-opacity hover:opacity-90 disabled:opacity-50"
                       >
-                        Fix automatically
+                        {t("fixAuto")}
                       </button>
                       <button
                         onClick={() => {
@@ -972,7 +996,7 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
                         }}
                         className="rounded-[4px] px-3 py-1.5 font-mono text-[11px] text-muted transition-colors hover:text-foreground"
                       >
-                        Dismiss
+                        {t("dismiss")}
                       </button>
                     </div>
                   </div>
@@ -1148,7 +1172,7 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-6">
           <div className="grad-border flex h-[80vh] w-full max-w-5xl flex-col rounded-[8px] bg-surface shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
             <div className="flex h-11 shrink-0 items-center justify-between border-b border-border px-3">
-              <span className="serif text-[15px] italic text-foreground">Review the fix</span>
+              <span className="serif text-[15px] italic text-foreground">{t("reviewFix")}</span>
               <span className="font-mono text-[11px] text-muted">
                 <span className="text-error">current</span> → <span className="text-success">proposed</span>
               </span>
@@ -1167,13 +1191,13 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
                 onClick={() => setPendingFix(null)}
                 className="rounded-[4px] px-3 py-1.5 font-mono text-[12px] text-muted hover:text-foreground"
               >
-                Cancel
+                {t("cancel")}
               </button>
               <button
                 onClick={applyFix}
                 className="rounded-[4px] bg-accent px-3 py-1.5 font-mono text-[12px] font-medium text-[#0d0d0d] hover:opacity-90"
               >
-                Apply fix
+                {t("apply")}
               </button>
             </div>
           </div>
@@ -1290,6 +1314,51 @@ function CollapseTab({ side, onClick }: { side: "left" | "right"; onClick: () =>
     >
       {side === "left" ? "‹ collapse" : "collapse ›"}
     </button>
+  );
+}
+
+// Step 1 — full-screen prompt overlay shown until the project has content.
+function EmptyPrompt({
+  title,
+  placeholder,
+  busy,
+  onSubmit,
+}: {
+  title: string;
+  placeholder: string;
+  busy: boolean;
+  onSubmit: (prompt: string) => void;
+}) {
+  const [value, setValue] = useState("");
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const v = value.trim();
+    if (!v || busy) return;
+    onSubmit(v);
+    setValue("");
+  }
+  return (
+    <div className="absolute inset-x-0 bottom-0 top-11 z-30 flex flex-col items-center justify-center gap-6 bg-background px-4">
+      <p className="serif text-3xl italic text-foreground">{title}</p>
+      <form onSubmit={submit} className="grad-border glow-hover relative w-full max-w-[640px] rounded-[12px] bg-surface">
+        <input
+          autoFocus
+          value={value}
+          disabled={busy}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder={placeholder}
+          className="w-full rounded-[12px] bg-transparent px-4 py-4 pr-14 font-sans text-sm text-foreground outline-none placeholder:text-muted disabled:opacity-50"
+        />
+        <button
+          type="submit"
+          disabled={busy}
+          aria-label="Generate"
+          className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-[8px] bg-accent text-[#0d0d0d] transition-opacity hover:opacity-90 disabled:opacity-50"
+        >
+          {busy ? "…" : "→"}
+        </button>
+      </form>
+    </div>
   );
 }
 
