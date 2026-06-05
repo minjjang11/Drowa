@@ -54,7 +54,7 @@ export function VersionHistoryPanel({
   }, []);
 
   return (
-    <aside className="grad-border absolute right-0 top-0 z-30 flex h-full w-80 flex-col bg-surface shadow-[-4px_0_24px_rgba(0,0,0,0.5)]">
+    <aside className="liquid-glass-strong anim-panel absolute right-0 top-0 z-30 flex h-full w-80 flex-col">
       <div className="flex h-11 shrink-0 items-center justify-between border-b border-border px-3">
         <span className="serif text-[15px] italic text-foreground">Version history</span>
         <button onClick={onClose} className="font-mono text-[11px] text-muted hover:text-foreground">

@@ -37,7 +37,7 @@ export default async function HomePage() {
       <header className="grad-border-bottom flex items-center justify-between bg-surface px-6 py-3">
         <span className="font-mono text-sm font-semibold text-foreground">drowa</span>
         <div className="flex items-center gap-3">
-          <span className="flex h-6 w-6 items-center justify-center rounded-[9999px] bg-gradient-to-br from-accent to-accent-2 font-mono text-[10px] font-semibold text-[#0d0d0d]">
+          <span className="flex h-6 w-6 items-center justify-center rounded-[9999px] bg-gradient-to-br from-accent to-accent-2 font-mono text-[10px] font-semibold text-white">
             {(user.email ?? "?")[0]?.toUpperCase()}
           </span>
           <span className="font-mono text-[11px] text-muted">{user.email}</span>

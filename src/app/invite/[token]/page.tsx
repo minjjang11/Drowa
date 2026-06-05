@@ -23,7 +23,7 @@ export default async function InvitePage({
 
   return (
     <div className="noise flex min-h-screen items-center justify-center px-4">
-      <div className="grad-border w-full max-w-sm rounded-[8px] bg-surface p-8 text-center shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
+      <div className="grad-border w-full max-w-sm rounded-[8px] bg-surface p-8 text-center anim-modal shadow-[0_8px_32px_rgba(0,0,0,0.12)]">
         {!inv ? (
           <>
             <h1 className="serif text-3xl italic text-foreground">Invite not found</h1>
@@ -50,7 +50,7 @@ export default async function InvitePage({
               <input type="hidden" name="token" value={token} />
               <button
                 type="submit"
-                className="w-full rounded-[6px] bg-accent px-3 py-2.5 font-mono text-[12px] font-medium text-[#0d0d0d] transition-opacity hover:opacity-90"
+                className="w-full rounded-[6px] bg-accent px-3 py-2.5 font-mono text-[12px] font-medium text-white transition-opacity hover:opacity-90"
               >
                 Accept &amp; Open Project
               </button>

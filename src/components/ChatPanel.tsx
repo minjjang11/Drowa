@@ -60,6 +60,9 @@ export function ChatPanel({
 
   const tag = role === "dev_ai" ? "DEV" : "DESIGN";
   const tagColor = role === "dev_ai" ? "text-accent" : "text-accent-2";
+  // [DEV] dark pill / [DESIGN] cream pill.
+  const tagPill =
+    role === "dev_ai" ? "bg-accent text-white" : "bg-highlight text-foreground";
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
@@ -76,8 +79,8 @@ export function ChatPanel({
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
-        <span className={`font-mono text-[10px] font-semibold tracking-wider ${tagColor}`}>
-          [{tag}]
+        <span className={`rounded-[4px] px-1.5 py-0.5 font-mono text-[9px] font-semibold tracking-wider ${tagPill}`}>
+          {tag}
         </span>
         <span className="font-mono text-[11px] uppercase tracking-wider text-muted">
           {title}
@@ -96,10 +99,10 @@ export function ChatPanel({
               {m.sender === "user" ? "YOU" : tag}
             </span>
             <div
-              className={`rounded-[4px] px-2.5 py-2 text-[13px] leading-relaxed ${
+              className={`rounded-[8px] px-2.5 py-2 text-[13px] leading-relaxed ${
                 m.sender === "user"
-                  ? "bg-background text-foreground"
-                  : "border-l-2 border-accent bg-surface-elevated text-foreground"
+                  ? "bg-accent text-white"
+                  : "bg-background text-foreground"
               }`}
             >
               <pre className="whitespace-pre-wrap break-words font-sans">{m.content}</pre>
@@ -132,7 +135,7 @@ export function ChatPanel({
             <button
               onClick={onFix}
               disabled={busy}
-              className="mt-2 rounded-[4px] bg-accent px-2.5 py-1 font-mono text-[10px] font-medium text-[#0d0d0d] hover:opacity-90 disabled:opacity-50"
+              className="mt-2 rounded-[4px] bg-accent px-2.5 py-1 font-mono text-[10px] font-medium text-white hover:opacity-90 disabled:opacity-50"
             >
               Fix automatically ↗
             </button>

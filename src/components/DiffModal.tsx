@@ -50,7 +50,7 @@ export function DiffModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-6">
-      <div className="grad-border flex h-[80vh] w-full max-w-5xl flex-col rounded-[8px] bg-surface shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
+      <div className="grad-border flex h-[80vh] w-full max-w-5xl flex-col rounded-[8px] bg-surface anim-modal shadow-[0_8px_32px_rgba(0,0,0,0.12)]">
         <div className="flex h-11 shrink-0 items-center justify-between border-b border-border px-3">
           <div className="flex items-center gap-3">
             <span className="serif text-[15px] italic text-foreground">Diff</span>

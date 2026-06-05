@@ -132,7 +132,7 @@ export function InspirationLibrary({
   const shown = tab === "curated" ? CURATED : saved;
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-[#0d0d0d]/95 backdrop-blur-sm duration-200">
+    <div className="liquid-glass-strong anim-modal fixed inset-0 z-50 flex flex-col duration-200">
       <div className="flex h-12 shrink-0 items-center justify-between border-b border-border px-5">
         <div className="flex items-center gap-4">
           <span className="serif text-lg italic text-foreground">Inspiration</span>
@@ -234,7 +234,7 @@ export function InspirationLibrary({
                   </div>
                   <button
                     onClick={() => onApply(insp)}
-                    className="mt-3 w-full rounded-[4px] bg-accent py-1.5 font-mono text-[11px] font-medium text-[#0d0d0d] transition-opacity hover:opacity-90"
+                    className="mt-3 w-full rounded-[4px] bg-accent py-1.5 font-mono text-[11px] font-medium text-white transition-opacity hover:opacity-90"
                   >
                     Apply Style
                   </button>

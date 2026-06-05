@@ -14,11 +14,11 @@ const DEVICES: { id: DeviceMode; label: string; icon: string }[] = [
 ];
 
 // Only three states surface to the user: Ready / Building… / Error.
-const STATUS_META: Record<Status, { dot: string; key: TKey; spin?: boolean }> = {
-  ready: { dot: "bg-success", key: "ready" },
-  generating: { dot: "bg-accent", key: "building", spin: true },
-  saved: { dot: "bg-success", key: "ready" },
-  error: { dot: "bg-error", key: "error" },
+const STATUS_META: Record<Status, { dot: string; key: TKey; pill: string; spin?: boolean }> = {
+  ready: { dot: "bg-[#16a34a]", key: "ready", pill: "bg-[#e8f5e9] text-[#16a34a]" },
+  generating: { dot: "bg-[#b45309]", key: "building", pill: "bg-[#fef3e2] text-[#b45309]", spin: true },
+  saved: { dot: "bg-[#9a9a9a]", key: "ready", pill: "bg-[#f5f5f5] text-[#6b6b6b]" },
+  error: { dot: "bg-[#dc2626]", key: "error", pill: "bg-[#fef2f2] text-[#dc2626]" },
 };
 
 // KO / EN pill switcher.
@@ -80,7 +80,7 @@ function InvitePopover({ projectId }: { projectId: string }) {
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="grad-border absolute right-0 top-9 z-50 w-60 rounded-[8px] bg-surface p-4 shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
+          <div className="grad-border absolute right-0 top-9 z-50 w-60 rounded-[8px] bg-surface p-4 anim-modal shadow-[0_8px_32px_rgba(0,0,0,0.12)]">
             <p className="serif text-sm italic text-foreground">Invite a teammate</p>
             <p className="mt-3 font-mono text-[10px] uppercase tracking-wider text-muted">Role</p>
             <div className="mt-1.5 flex gap-1 rounded-[6px] border border-border bg-background p-0.5">
@@ -89,7 +89,7 @@ function InvitePopover({ projectId }: { projectId: string }) {
                   key={r}
                   onClick={() => setRole(r)}
                   className={`flex-1 rounded-[4px] px-2 py-1 font-mono text-[11px] capitalize transition-colors ${
-                    role === r ? "bg-accent text-[#0d0d0d]" : "text-muted hover:text-foreground"
+                    role === r ? "bg-accent text-white" : "text-muted hover:text-foreground"
                   }`}
                 >
                   {r}
@@ -99,7 +99,7 @@ function InvitePopover({ projectId }: { projectId: string }) {
             <button
               onClick={copyLink}
               disabled={busy}
-              className="mt-3 w-full rounded-[6px] bg-accent px-3 py-2 font-mono text-[11px] font-medium text-[#0d0d0d] transition-opacity hover:opacity-90 disabled:opacity-50"
+              className="mt-3 w-full rounded-[6px] bg-accent px-3 py-2 font-mono text-[11px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               {copied ? "✓ Copied!" : busy ? "…" : "Copy invite link"}
             </button>
@@ -162,7 +162,7 @@ export function Toolbar({
   }
 
   return (
-    <header className="grad-border-bottom flex h-11 shrink-0 items-center justify-between bg-surface px-3">
+    <header className="liquid-glass sticky top-0 z-30 flex h-11 shrink-0 items-center justify-between border-b border-[rgba(0,0,0,0.06)] px-3">
       {/* Left: logo + editable name */}
       <div className="flex items-center gap-2">
         <Link href="/" className="font-mono text-xs font-semibold text-foreground transition-colors hover:text-accent">
@@ -251,7 +251,7 @@ export function Toolbar({
             </Tooltip>
           </>
         )}
-        <div className="flex items-center gap-1.5 rounded-[4px] border border-border bg-background px-2 py-1 font-mono text-[11px] text-muted">
+        <div className={`flex items-center gap-1.5 rounded-[9999px] px-2.5 py-1 font-mono text-[11px] ${meta.pill}`}>
           <span className={`h-1.5 w-1.5 rounded-full ${meta.dot} ${meta.spin ? "amber-pulse" : ""}`} />
           {t(meta.key)}
         </div>

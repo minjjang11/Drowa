@@ -143,7 +143,7 @@ function buildSrcDoc(code: string): string {
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <style>
       html,body,#root{height:100%;margin:0;}
-      [data-drowa-selected]{outline:2px solid #f59e0b !important;outline-offset:1px;}
+      [data-drowa-selected]{outline:2px solid #0f0f0f !important;outline-offset:1px;}
       .drowa-edit [data-drowa-id]{cursor:pointer;}
       .drowa-dragging{opacity:.5 !important;}
     </style>

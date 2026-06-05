@@ -51,7 +51,7 @@ export function TemplateGallery() {
             onClick={() => setFilter(f.id)}
             className={`rounded-[9999px] px-3 py-1 font-mono text-[11px] transition-colors duration-150 ${
               filter === f.id
-                ? "bg-accent text-[#0d0d0d]"
+                ? "bg-accent text-white"
                 : "border border-border text-muted hover:text-foreground"
             }`}
           >
@@ -79,7 +79,7 @@ export function TemplateGallery() {
                 <span className="absolute right-2 top-2 rounded-[9999px] border border-border bg-background/70 px-2 py-0.5 font-mono text-[9px] text-muted">
                   {categoryLabel(t.category)}
                 </span>
-                <span className="absolute inset-x-0 bottom-0 flex translate-y-full items-center justify-center bg-accent py-2 font-mono text-[11px] font-medium text-[#0d0d0d] transition-transform duration-150 group-hover:translate-y-0">
+                <span className="absolute inset-x-0 bottom-0 flex translate-y-full items-center justify-center bg-accent py-2 font-mono text-[11px] font-medium text-white transition-transform duration-150 group-hover:translate-y-0">
                   Use this →
                 </span>
               </div>

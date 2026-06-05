@@ -48,7 +48,7 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center px-4">
-      <div className="grad-border w-full max-w-sm space-y-4 rounded-[8px] bg-surface p-8 shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
+      <div className="grad-border w-full max-w-sm space-y-4 rounded-[8px] bg-surface p-8 shadow-[0_8px_32px_rgba(0,0,0,0.12)]">
         <div>
           <h1 className="serif text-4xl italic tracking-tight text-foreground">Drowa</h1>
           <p className="font-mono text-xs text-muted">

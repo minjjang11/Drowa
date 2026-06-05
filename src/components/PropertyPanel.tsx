@@ -73,7 +73,7 @@ export function PropertyPanel({
 
   return (
     <div
-      className={`grad-border absolute right-0 top-0 z-10 flex h-full w-60 flex-col bg-surface shadow-[-4px_0_24px_rgba(0,0,0,0.5)] transition-transform duration-[250ms] ease-out ${
+      className={`liquid-glass-strong absolute right-0 top-0 z-10 flex h-full w-60 flex-col transition-transform duration-[250ms] ease-out ${
         open ? "translate-x-0" : "translate-x-full"
       }`}
     >

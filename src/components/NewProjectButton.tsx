@@ -101,7 +101,7 @@ export function NewProjectButton({
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="grad-border w-full max-w-md rounded-[8px] bg-surface p-6 shadow-[0_8px_32px_rgba(0,0,0,0.6)]"
+            className="grad-border w-full max-w-md rounded-[8px] bg-surface p-6 anim-modal shadow-[0_8px_32px_rgba(0,0,0,0.12)]"
           >
             <div className="mb-4 flex gap-1">
               {(["fresh", "github"] as const).map((t) => (

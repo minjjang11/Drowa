@@ -11,6 +11,7 @@ import { relativeTime } from "@/lib/versionMeta";
 import { bundleProject } from "@/lib/bundler";
 import { buildStandaloneHtml } from "@/lib/standalone";
 import { useI18n } from "@/lib/i18n";
+import { BlurText } from "./BlurText";
 import { DiffEditor } from "@monaco-editor/react";
 
 const VersionHistoryPanel = dynamic(() => import("./VersionHistoryPanel").then((m) => m.VersionHistoryPanel), { ssr: false });
@@ -916,20 +917,20 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
 
           {/* §5 Previewing-a-version banner. */}
           {previewVersion && (
-            <div className="flex shrink-0 items-center justify-between bg-accent px-3 py-1.5 text-[#0d0d0d]">
+            <div className="flex shrink-0 items-center justify-between bg-accent px-3 py-1.5 text-white">
               <span className="font-mono text-[11px]">
                 Previewing: <span className="font-semibold">{previewVersion.v.label}</span> — {relativeTime(previewVersion.v.created_at)}
               </span>
               <div className="flex gap-2">
                 <button
                   onClick={() => setRestoreTarget(previewVersion.v)}
-                  className="rounded-[4px] bg-[#0d0d0d] px-2.5 py-1 font-mono text-[10px] font-medium text-accent hover:opacity-90"
+                  className="rounded-[4px] bg-white px-2.5 py-1 font-mono text-[10px] font-medium text-accent hover:opacity-90"
                 >
                   Restore this
                 </button>
                 <button
                   onClick={() => setPreviewVersion(null)}
-                  className="rounded-[4px] px-2.5 py-1 font-mono text-[10px] text-[#0d0d0d] hover:opacity-70"
+                  className="rounded-[4px] px-2.5 py-1 font-mono text-[10px] text-white hover:opacity-70"
                 >
                   Close
                 </button>
@@ -937,7 +938,7 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
             </div>
           )}
 
-          <div className="flex-1 overflow-auto p-3">
+          <div className="flex-1 overflow-auto bg-highlight p-3">
             {tab === "preview" ? (
               <div
                 className={`relative mx-auto h-full overflow-hidden rounded-[6px] transition-[max-width] duration-150 ${
@@ -976,7 +977,7 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
                 )}
 
                 {previewError && (
-                  <div className="absolute inset-x-0 bottom-0 z-10 border-t border-error bg-[#0d0d0d]/95 p-4 backdrop-blur-sm">
+                  <div className="liquid-glass-strong absolute inset-x-0 bottom-0 z-10 border-t border-error p-4">
                     <p className="mb-1 font-mono text-[10px] uppercase tracking-wider text-error">{t("somethingWrong")}</p>
                     <p className="mb-3 line-clamp-1 font-mono text-[11px] leading-snug text-muted">
                       {previewError.message.split("\n")[0].slice(0, 140)}
@@ -985,7 +986,7 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
                       <button
                         onClick={fixError}
                         disabled={busy !== null}
-                        className="rounded-[4px] bg-accent px-3 py-1.5 font-mono text-[11px] font-medium text-[#0d0d0d] transition-opacity hover:opacity-90 disabled:opacity-50"
+                        className="rounded-[4px] bg-accent px-3 py-1.5 font-mono text-[11px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
                       >
                         {t("fixAuto")}
                       </button>
@@ -1110,7 +1111,7 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
       {/* §3 Manual "Save version" modal */}
       {saveVersionOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-          <div className="grad-border w-full max-w-sm rounded-[8px] bg-surface p-5 shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
+          <div className="grad-border w-full max-w-sm rounded-[8px] bg-surface p-5 anim-modal shadow-[0_8px_32px_rgba(0,0,0,0.12)]">
             <h2 className="serif text-lg italic text-foreground">Save version</h2>
             <input
               autoFocus
@@ -1144,7 +1145,7 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
       {/* §6 Restore confirmation */}
       {restoreTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-          <div className="grad-border w-full max-w-md rounded-[8px] bg-surface p-6 shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
+          <div className="grad-border w-full max-w-md rounded-[8px] bg-surface p-6 anim-modal shadow-[0_8px_32px_rgba(0,0,0,0.12)]">
             <h2 className="serif text-lg italic text-foreground">Restore to {restoreTarget.label}?</h2>
             <p className="mt-2 font-mono text-[11px] leading-relaxed text-muted">
               Your current work will be saved as a version first. This cannot be undone.
@@ -1158,7 +1159,7 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
               </button>
               <button
                 onClick={() => doRestore(restoreTarget)}
-                className="rounded-[4px] bg-accent px-3 py-1.5 font-mono text-[12px] font-medium text-[#0d0d0d] hover:opacity-90"
+                className="rounded-[4px] bg-accent px-3 py-1.5 font-mono text-[12px] font-medium text-white hover:opacity-90"
               >
                 Restore
               </button>
@@ -1170,7 +1171,7 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
       {/* P1 — auto-fix diff confirmation */}
       {pendingFix && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-6">
-          <div className="grad-border flex h-[80vh] w-full max-w-5xl flex-col rounded-[8px] bg-surface shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
+          <div className="grad-border flex h-[80vh] w-full max-w-5xl flex-col rounded-[8px] bg-surface anim-modal shadow-[0_8px_32px_rgba(0,0,0,0.12)]">
             <div className="flex h-11 shrink-0 items-center justify-between border-b border-border px-3">
               <span className="serif text-[15px] italic text-foreground">{t("reviewFix")}</span>
               <span className="font-mono text-[11px] text-muted">
@@ -1195,7 +1196,7 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
               </button>
               <button
                 onClick={applyFix}
-                className="rounded-[4px] bg-accent px-3 py-1.5 font-mono text-[12px] font-medium text-[#0d0d0d] hover:opacity-90"
+                className="rounded-[4px] bg-accent px-3 py-1.5 font-mono text-[12px] font-medium text-white hover:opacity-90"
               >
                 {t("apply")}
               </button>
@@ -1207,7 +1208,7 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
       {/* P2 — deploy instructions */}
       {deployOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-          <div className="grad-border w-full max-w-md rounded-[8px] bg-surface p-6 shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
+          <div className="grad-border w-full max-w-md rounded-[8px] bg-surface p-6 anim-modal shadow-[0_8px_32px_rgba(0,0,0,0.12)]">
             <h2 className="serif text-lg italic text-foreground">Your site is ready 🎉</h2>
             <p className="mt-2 font-mono text-[11px] leading-relaxed text-muted">
               Downloaded <span className="text-accent">index.html</span> — a complete, self-contained site. To put it online with a public URL:
@@ -1248,7 +1249,7 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
 
       {conflicts && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-          <div className="w-full max-w-md rounded-[8px] border-2 border-error bg-surface p-6 shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
+          <div className="w-full max-w-md rounded-[8px] border-2 border-error bg-surface p-6 anim-modal shadow-[0_8px_32px_rgba(0,0,0,0.12)]">
             <h2 className="serif text-lg italic text-foreground">Merge conflict</h2>
             <p className="mt-1 font-mono text-[11px] text-muted">
               {conflicts.mode === "push"
@@ -1339,7 +1340,9 @@ function EmptyPrompt({
   }
   return (
     <div className="absolute inset-x-0 bottom-0 top-11 z-30 flex flex-col items-center justify-center gap-6 bg-background px-4">
-      <p className="serif text-3xl italic text-foreground">{title}</p>
+      <p className="serif text-3xl text-foreground">
+        <BlurText text={title} />
+      </p>
       <form onSubmit={submit} className="grad-border glow-hover relative w-full max-w-[640px] rounded-[12px] bg-surface">
         <input
           autoFocus
@@ -1353,7 +1356,7 @@ function EmptyPrompt({
           type="submit"
           disabled={busy}
           aria-label="Generate"
-          className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-[8px] bg-accent text-[#0d0d0d] transition-opacity hover:opacity-90 disabled:opacity-50"
+          className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-[8px] bg-accent text-white transition-opacity hover:opacity-90 disabled:opacity-50"
         >
           {busy ? "…" : "→"}
         </button>
@@ -1390,7 +1393,7 @@ function FloatingToolbar({
         transform: above ? "translate(-50%, -100%)" : "translate(-50%, 0)",
       }}
     >
-      <div className="grad-border flex items-center gap-0.5 rounded-[8px] bg-surface px-1 py-0.5 shadow-[0_4px_16px_rgba(0,0,0,0.5)]">
+      <div className="liquid-glass flex items-center gap-0.5 rounded-[8px] px-1 py-0.5">
         <button onClick={onDuplicate} className={btn} title="Duplicate">⎘ Duplicate</button>
         <button onClick={onEdit} className={btn} title="Edit in chat">✎ Edit</button>
         <button onClick={onDelete} className={`${btn} hover:text-error`} title="Delete">✕ Delete</button>

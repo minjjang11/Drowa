@@ -1,18 +1,22 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0d0d0d;
-  --surface: #141414;
-  --surface-elevated: #1a1a1a;
-  --border: #2a2a2a;
-  --foreground: #f5f5f0;
-  --muted: #888880;
-  --accent: #f59e0b;
-  --accent-2: #ec4899;
-  --accent-3: #8b5cf6;
-  --success: #22c55e;
-  --error: #ef4444;
-  --grad: linear-gradient(135deg, #f59e0b, #ec4899, #8b5cf6);
+  /* Light, warm, premium — never pure white, no blue/indigo. */
+  --background: #f8f7f4;       /* warm off-white page */
+  --surface: #ffffff;
+  --surface-elevated: #fefefe;
+  --border: rgba(0, 0, 0, 0.08);
+  --border-strong: rgba(0, 0, 0, 0.14);
+  --foreground: #0f0f0f;       /* text primary */
+  --foreground-2: #6b6b6b;     /* text secondary */
+  --muted: #9a9a9a;            /* text muted */
+  --accent: #1a1a1a;           /* near-black, strong contrast */
+  --accent-2: #6b6b6b;         /* warm mid grey */
+  --highlight: #f0ece4;        /* warm cream — hover / selected */
+  --success: #16a34a;
+  --error: #dc2626;
+  /* "grad" repurposed as a SUBTLE neutral border gradient (no colour). */
+  --grad: linear-gradient(180deg, rgba(0, 0, 0, 0.10), rgba(0, 0, 0, 0.05));
 }
 
 @theme inline {
@@ -20,15 +24,18 @@
   --color-surface: var(--surface);
   --color-surface-elevated: var(--surface-elevated);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-foreground: var(--foreground);
+  --color-foreground-2: var(--foreground-2);
   --color-muted: var(--muted);
   --color-accent: var(--accent);
   --color-accent-2: var(--accent-2);
+  --color-highlight: var(--highlight);
   --color-success: var(--success);
   --color-error: var(--error);
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", monospace;
-  --font-serif: var(--font-playfair), Georgia, serif;
+  --font-serif: var(--font-playfair), "Instrument Serif", Georgia, serif;
 }
 
 html,
@@ -47,23 +54,45 @@ body {
   box-sizing: border-box;
 }
 
-/* ── Serif display face — the differentiator ───────────────── */
+/* ── Instrument Serif display face — always italic, tight tracking ── */
 .serif {
-  font-family: var(--font-playfair), Georgia, serif;
+  font-family: var(--font-playfair), "Instrument Serif", Georgia, serif;
+  font-style: italic;
+  letter-spacing: -0.02em;
 }
 
-/* ── Subtle warm noise overlay (fixed, non-interactive) ─────── */
+/* ── Liquid glass (light) ──────────────────────────────────── */
+.liquid-glass {
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.04),
+    inset 0 1px 1px rgba(255, 255, 255, 0.95);
+}
+.liquid-glass-strong {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.06),
+    inset 0 1px 1px rgba(255, 255, 255, 1);
+}
+
+/* ── Faint warm noise overlay ──────────────────────────────── */
 .noise::before {
   content: "";
   position: fixed;
   inset: 0;
   z-index: 9999;
   pointer-events: none;
-  opacity: 0.04;
+  opacity: 0.025;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
-/* ── Gradient border (padding-box trick) ───────────────────── */
+/* ── Subtle neutral border (replaces old gradient border) ──── */
 .grad-border {
   border: 1px solid transparent;
   background:
@@ -71,68 +100,108 @@ body {
     var(--grad) border-box;
 }
 .grad-border-bottom {
-  border-bottom: 1px solid transparent;
-  border-image: var(--grad) 1;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
-/* gradient border that brightens on hover (cards / active) */
+
+/* ── Cards: clean border, lift + soft shadow on hover ──────── */
 .grad-hover {
   border: 1px solid var(--border);
   transition: border-color 150ms ease-out, box-shadow 150ms ease-out, transform 150ms ease-out;
 }
 .grad-hover:hover {
-  border-color: transparent;
-  background:
-    linear-gradient(var(--surface), var(--surface)) padding-box,
-    var(--grad) border-box;
+  border-color: var(--border-strong);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
 }
 
-/* ── Dark input with inset amber focus glow ────────────────── */
+/* ── Light input, focus → 1px solid near-black ─────────────── */
 .input-dark {
   background: var(--background);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   color: var(--foreground);
   transition: border-color 150ms ease-out, box-shadow 150ms ease-out;
 }
 .input-dark::placeholder { color: var(--muted); }
 .input-dark:focus {
   outline: none;
-  border-color: var(--accent);
-  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.25), 0 0 0 1px rgba(245, 158, 11, 0.15);
+  border-color: var(--foreground);
+  box-shadow: 0 0 0 1px var(--foreground);
 }
 
-/* ── Gradient-border button (not filled) ───────────────────── */
-.btn-grad {
+/* ── Buttons ───────────────────────────────────────────────── */
+/* primary CTA — solid near-black */
+.btn-grad,
+.btn-primary {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: #ffffff;
+  transition: background 150ms ease-out, box-shadow 150ms ease-out;
+}
+.btn-grad:hover,
+.btn-primary:hover {
+  background: #333333;
+}
+.btn-secondary {
+  background: var(--highlight);
   border: 1px solid transparent;
-  background:
-    linear-gradient(var(--surface), var(--surface)) padding-box,
-    var(--grad) border-box;
   color: var(--foreground);
-  transition: box-shadow 150ms ease-out;
+  transition: background 150ms ease-out;
 }
-.btn-grad:hover {
-  box-shadow: 0 0 12px rgba(245, 158, 11, 0.3);
+.btn-secondary:hover { background: #e8e2d6; }
+.btn-ghost {
+  background: transparent;
+  color: var(--foreground);
+  transition: background 150ms ease-out;
+}
+.btn-ghost:hover { background: var(--highlight); }
+.btn-danger {
+  background: #fef2f2;
+  color: var(--error);
+  border: 1px solid transparent;
 }
 
-/* subtle amber glow on plain hover targets */
-.glow-hover { transition: box-shadow 150ms ease-out, color 150ms ease-out; }
-.glow-hover:hover { box-shadow: 0 0 12px rgba(245, 158, 11, 0.25); }
+/* subtle highlight on plain hover targets */
+.glow-hover { transition: background 150ms ease-out, color 150ms ease-out, box-shadow 150ms ease-out; }
+.glow-hover:hover { background: var(--highlight); }
 
-/* ── Status dot amber pulse ────────────────────────────────── */
+/* ── Status dot pulse (amber, for "building") ──────────────── */
 @keyframes amber-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.5); opacity: 1; }
-  50% { box-shadow: 0 0 0 4px rgba(245, 158, 11, 0); opacity: 0.6; }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(180, 83, 9, 0.4); opacity: 1; }
+  50% { box-shadow: 0 0 0 4px rgba(180, 83, 9, 0); opacity: 0.6; }
 }
 .amber-pulse { animation: amber-pulse 1.2s ease-in-out infinite; }
 
-/* preview vignette */
+/* preview frame inset (very subtle) */
 .vignette {
-  box-shadow: inset 0 0 60px 8px rgba(0, 0, 0, 0.55);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.04);
 }
+
+/* ── BlurText: word-by-word blur-in ────────────────────────── */
+@keyframes blur-in {
+  from { filter: blur(8px); opacity: 0; transform: translateY(16px); }
+  to { filter: blur(0); opacity: 1; transform: translateY(0); }
+}
+.blur-word {
+  display: inline-block;
+  opacity: 0;
+  animation: blur-in 0.5s ease-out forwards;
+}
+
+/* ── Panel / modal entrances ───────────────────────────────── */
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.anim-panel { animation: slide-in-right 0.2s ease-out; }
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.anim-modal { animation: rise-in 0.15s ease-out; }
 
 /* ── Markdown rendering (context.md preview) ───────────────── */
 .prose-drowa { color: var(--foreground); }
-.prose-drowa h1 { font-family: var(--font-playfair), serif; font-style: italic; font-size: 1.4rem; margin: 0.6em 0 0.3em; }
-.prose-drowa h2 { font-family: var(--font-playfair), serif; font-style: italic; font-size: 1.1rem; margin: 0.6em 0 0.3em; }
+.prose-drowa h1 { font-family: var(--font-serif); font-style: italic; letter-spacing: -0.02em; font-size: 1.4rem; margin: 0.6em 0 0.3em; }
+.prose-drowa h2 { font-family: var(--font-serif); font-style: italic; letter-spacing: -0.02em; font-size: 1.1rem; margin: 0.6em 0 0.3em; }
 .prose-drowa h3 { font-weight: 600; font-size: 0.95rem; margin: 0.5em 0 0.25em; }
 .prose-drowa p { margin: 0.4em 0; }
 .prose-drowa ul, .prose-drowa ol { margin: 0.4em 0; padding-left: 1.3em; }
@@ -143,21 +212,21 @@ body {
 .prose-drowa code {
   font-family: var(--font-geist-mono), monospace;
   font-size: 0.85em;
-  background: var(--surface-elevated);
+  background: var(--highlight);
   border: 1px solid var(--border);
   border-radius: 3px;
   padding: 0.05em 0.35em;
 }
 .prose-drowa pre {
   font-family: var(--font-geist-mono), monospace;
-  background: var(--surface-elevated);
-  border: 1px solid var(--border);
-  border-radius: 4px;
+  background: #0f0f0f;
+  color: #f5f5f0;
+  border-radius: 6px;
   padding: 0.7em 0.9em;
   overflow-x: auto;
   margin: 0.5em 0;
 }
-.prose-drowa pre code { background: none; border: none; padding: 0; }
+.prose-drowa pre code { background: none; border: none; padding: 0; color: inherit; }
 .prose-drowa blockquote {
   border-left: 3px solid var(--accent);
   padding-left: 0.8em;
@@ -168,5 +237,5 @@ body {
 
 /* ── Scrollbars ────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: #444; }
+::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.15); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, 0.25); }

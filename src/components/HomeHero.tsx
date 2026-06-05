@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { createProjectFromPrompt } from "@/app/actions";
 import { NewProjectButton } from "./NewProjectButton";
+import { BlurText } from "./BlurText";
 
 const PLACEHOLDERS = [
   "A SaaS landing page with dark mode…",
@@ -27,7 +28,7 @@ function SubmitArrow() {
       type="submit"
       disabled={pending}
       aria-label="Start building"
-      className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-[8px] bg-accent text-[#0d0d0d] transition-opacity duration-150 hover:opacity-90 disabled:opacity-50"
+      className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-[8px] bg-accent text-white transition-opacity duration-150 hover:opacity-90 disabled:opacity-50"
     >
       {pending ? "…" : "→"}
     </button>
@@ -45,8 +46,8 @@ export function HomeHero() {
 
   return (
     <section className="px-6 py-16 text-center">
-      <h1 className="serif text-4xl italic text-foreground sm:text-5xl">
-        What are you building today?
+      <h1 className="serif text-4xl text-foreground sm:text-5xl">
+        <BlurText text="What are you building today?" />
       </h1>
 
       <div className="mx-auto mt-8 max-w-[680px]">
@@ -58,7 +59,7 @@ export function HomeHero() {
               onClick={() => setTab(t.id)}
               className={`rounded-[9999px] px-3.5 py-1.5 font-mono text-[11px] transition-colors duration-150 ${
                 tab === t.id
-                  ? "bg-accent text-[#0d0d0d]"
+                  ? "bg-accent text-white"
                   : "border border-border text-muted hover:text-foreground"
               }`}
             >
