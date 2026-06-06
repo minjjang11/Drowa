@@ -1,6 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { decryptToken } from "./crypto";
+import { decodeBinaryContent, encodeBinaryContent, isBinaryFilePath } from "./fileContent";
 
 const API = "https://api.github.com";
 
@@ -84,7 +85,7 @@ export async function getTree(token: string, repo: string, branch: string): Prom
   return tree.tree.filter((e) => e.type === "blob");
 }
 
-const ALLOWED = /\.(tsx?|jsx?|css|json|md)$/i;
+const ALLOWED = /\.(tsx?|jsx?|css|json|md|woff2?|ttf|otf|eot|png|jpe?g|gif|webp|ico)$/i;
 const SKIP = /(^|\/)(node_modules|\.git|dist|\.next|build|out)\//;
 const PRIORITY_IMPORTS = [
   /^package\.json$/i,
@@ -95,6 +96,10 @@ const PRIORITY_IMPORTS = [
   /^postcss\.config\.[cm]?[jt]s$/i,
   /^src\/app\/layout\.[jt]sx?$/i,
   /^app\/layout\.[jt]sx?$/i,
+  /^src\/app\/fonts\//i,
+  /^app\/fonts\//i,
+  /^src\/fonts\//i,
+  /^fonts\//i,
   /^src\/app\/page\.[jt]sx?$/i,
   /^app\/page\.[jt]sx?$/i,
   /^pages\/index\.[jt]sx?$/i,
@@ -127,7 +132,7 @@ export function selectImportEntries(entries: TreeEntry[], maxFiles: number): Tre
     .slice(0, maxFiles);
 }
 
-/** Fetch a file's decoded text content + blob SHA. */
+/** Fetch a file's content + blob SHA. Binary assets are stored as base64 markers. */
 export async function getFileContent(
   token: string,
   repo: string,
@@ -138,9 +143,12 @@ export async function getFileContent(
     token,
     `/repos/${repo}/contents/${encodeURIComponent(path).replace(/%2F/g, "/")}?ref=${ref}`,
   )) as { content: string; encoding: string; sha: string };
+  const raw = data.content.replace(/\s/g, "");
   const content =
     data.encoding === "base64"
-      ? Buffer.from(data.content, "base64").toString("utf8")
+      ? isBinaryFilePath(path)
+        ? encodeBinaryContent(path, raw)
+        : Buffer.from(raw, "base64").toString("utf8")
       : data.content;
   return { content, sha: data.sha };
 }
@@ -155,9 +163,10 @@ export async function putFile(
   branch: string,
   sha?: string,
 ): Promise<string> {
+  const binary = decodeBinaryContent(content);
   const body: Record<string, unknown> = {
     message,
-    content: Buffer.from(content, "utf8").toString("base64"),
+    content: binary ? binary.base64 : Buffer.from(content, "utf8").toString("base64"),
     branch,
   };
   if (sha) body.sha = sha;

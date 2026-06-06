@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ProjectFile } from "@/lib/previewRuntime";
+import { decodeBinaryContent } from "@/lib/fileContent";
 
 type WebContainerLike = {
   mount: (tree: Record<string, unknown>) => Promise<void>;
@@ -23,6 +24,13 @@ interface WebContainerPreviewProps {
 
 function normalizePath(path: string): string {
   return path.replace(/\\/g, "/").replace(/^\/+/, "");
+}
+
+function base64ToBytes(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
 }
 
 function readPackage(files: ProjectFile[]): {
@@ -90,7 +98,10 @@ function toFileTree(files: ProjectFile[]): Record<string, unknown> {
       if (!existing?.directory) cursor[part] = { directory: {} };
       cursor = (cursor[part] as { directory: Record<string, unknown> }).directory;
     }
-    cursor[parts[parts.length - 1]] = { file: { contents: file.content } };
+    const binary = decodeBinaryContent(file.content);
+    cursor[parts[parts.length - 1]] = {
+      file: { contents: binary ? base64ToBytes(binary.base64) : file.content },
+    };
   }
   return root;
 }
