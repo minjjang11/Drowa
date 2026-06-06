@@ -81,6 +81,33 @@ function envFiles(previewEnv: string | null | undefined): ProjectFile[] {
   ];
 }
 
+// Even under `next dev`, Next renders a prerender/static shell of each route to
+// detect staticness (the `Array.toJSON` + `Timeout.eval` render path). A page that
+// reads cookies()/headers() *indirectly* — e.g. via an unawaited Supabase-client
+// promise passed to a client child — doesn't trip Next's dynamic auto-detection, so
+// that prerender runs with no request scope and throws "cookies was called outside a
+// request scope". Marking every App Router route dynamic opts it out of that prerender.
+// (A direct top-level `await cookies()` auto-detects dynamic and never hits this, which
+// is why some pages are fine without the export.)
+const NEXT_ROUTE_FILE = /(?:^|\/)app\/(?:.*\/)?(page|layout|route)\.(tsx|ts|jsx|js)$/;
+const DYNAMIC_EXPORT = 'export const dynamic = "force-dynamic";\n';
+// A leading "use client" / "use server" directive MUST stay the first statement, so
+// insert the export *after* any directive prologue (and any leading comments) — never
+// blindly prepend, or the directive moves off line 1 and the build fails.
+const DIRECTIVE_PROLOGUE = /^\s*(?:\/\/[^\n]*\n|\/\*[\s\S]*?\*\/\s*)*["'`]use (?:client|server)["'`];?[^\n]*\n?/;
+
+function forceNextDynamic(files: ProjectFile[]): ProjectFile[] {
+  return files.map((file) => {
+    if (!NEXT_ROUTE_FILE.test(file.path)) return file;
+    if (/export\s+const\s+dynamic\b/.test(file.content)) return file;
+    const directive = file.content.match(DIRECTIVE_PROLOGUE);
+    const content = directive
+      ? directive[0] + DYNAMIC_EXPORT + file.content.slice(directive[0].length)
+      : DYNAMIC_EXPORT + file.content;
+    return { ...file, content };
+  });
+}
+
 function ensureRuntimeFiles(files: ProjectFile[], previewEnv: string | null | undefined): ProjectFile[] {
   const normalized = files.map((file) => ({ ...file, path: normalizePath(file.path) }));
   // User-provided env always wins over any committed .env in the repo.
@@ -88,7 +115,10 @@ function ensureRuntimeFiles(files: ProjectFile[], previewEnv: string | null | un
   const envPaths = new Set(env.map((f) => f.path));
   const withoutEnv = normalized.filter((f) => !envPaths.has(f.path));
   const hasPackage = withoutEnv.some((file) => file.path === "package.json");
-  if (hasPackage) return [...withoutEnv, ...env];
+  if (hasPackage) {
+    const ready = isNextApp(withoutEnv) ? forceNextDynamic(withoutEnv) : withoutEnv;
+    return [...ready, ...env];
+  }
 
   const app = withoutEnv.find((file) => file.path === "App.tsx")?.content ?? "export default function App() { return null; }";
   return [
