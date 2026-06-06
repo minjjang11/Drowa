@@ -86,9 +86,45 @@ export async function getTree(token: string, repo: string, branch: string): Prom
 
 const ALLOWED = /\.(tsx?|jsx?|css|json|md)$/i;
 const SKIP = /(^|\/)(node_modules|\.git|dist|\.next|build|out)\//;
+const PRIORITY_IMPORTS = [
+  /^package\.json$/i,
+  /^next\.config\.[cm]?[jt]s$/i,
+  /^vite\.config\.[cm]?[jt]s$/i,
+  /^tsconfig\.json$/i,
+  /^tailwind\.config\.[cm]?[jt]s$/i,
+  /^postcss\.config\.[cm]?[jt]s$/i,
+  /^src\/app\/layout\.[jt]sx?$/i,
+  /^app\/layout\.[jt]sx?$/i,
+  /^src\/app\/page\.[jt]sx?$/i,
+  /^app\/page\.[jt]sx?$/i,
+  /^pages\/index\.[jt]sx?$/i,
+  /^src\/app\/globals\.css$/i,
+  /^app\/globals\.css$/i,
+  /^src\/App\.[jt]sx?$/i,
+  /^src\/main\.[jt]sx?$/i,
+  /^src\/index\.[jt]sx?$/i,
+  /^App\.[jt]sx?$/i,
+  /^index\.[jt]sx?$/i,
+  /^src\/components\//i,
+  /^components\//i,
+  /^src\/lib\//i,
+  /^lib\//i,
+];
 
 export function shouldImport(path: string): boolean {
   return ALLOWED.test(path) && !SKIP.test(path);
+}
+
+function importPriority(path: string): number {
+  const index = PRIORITY_IMPORTS.findIndex((re) => re.test(path));
+  return index === -1 ? PRIORITY_IMPORTS.length : index;
+}
+
+export function selectImportEntries(entries: TreeEntry[], maxFiles: number): TreeEntry[] {
+  return entries
+    .filter((entry) => shouldImport(entry.path))
+    .sort((a, b) => importPriority(a.path) - importPriority(b.path) || a.path.localeCompare(b.path))
+    .slice(0, maxFiles);
 }
 
 /** Fetch a file's decoded text content + blob SHA. */

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { getConnection, getTree, getFileContent, shouldImport } from "@/lib/github";
+import { getConnection, getTree, getFileContent, selectImportEntries } from "@/lib/github";
 import type { FileRow } from "@/lib/types";
 
 const MAX_FILES = 80;
@@ -42,9 +42,7 @@ export async function POST(req: Request) {
   );
 
   try {
-    const tree = (await getTree(conn.token, repo, branch))
-      .filter((e) => shouldImport(e.path))
-      .slice(0, MAX_FILES);
+    const tree = selectImportEntries(await getTree(conn.token, repo, branch), MAX_FILES);
 
     const updated: string[] = [];
     const conflicts: string[] = [];

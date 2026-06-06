@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { getConnection, getTree, getFileContent, shouldImport } from "@/lib/github";
+import { getConnection, getTree, getFileContent, selectImportEntries } from "@/lib/github";
 import { DEFAULT_TOKENS } from "@/lib/types";
 
 const MAX_FILES = 80;
@@ -26,9 +26,7 @@ export async function POST(req: Request) {
   if (!conn) return NextResponse.json({ error: "GitHub not connected" }, { status: 400 });
 
   try {
-    const tree = (await getTree(conn.token, repo, branch))
-      .filter((e) => shouldImport(e.path))
-      .slice(0, MAX_FILES);
+    const tree = selectImportEntries(await getTree(conn.token, repo, branch), MAX_FILES);
 
     // Create the project (trigger seeds membership + empty context_md row).
     const repoName = repo.split("/")[1] ?? repo;

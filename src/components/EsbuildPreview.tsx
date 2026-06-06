@@ -72,6 +72,29 @@ function createEntrySource(entry: string, files: Map<string, string>): string {
   const source = files.get(entry) ?? "";
   const isMainEntry = /(^|\/)(main|index)\.[jt]sx?$/.test(entry) && /createRoot|render\(/.test(source);
   if (isMainEntry) return `import "./${entry}";`;
+  const isServerEntry =
+    /export\s+default\s+async\s+function/.test(source) ||
+    /from\s+["']next\/(headers|cookies|server)["']/.test(source) ||
+    /import\s+\{[^}]*\b(redirect|notFound)\b[^}]*\}\s+from\s+["']next\/navigation["']/.test(source) ||
+    /from\s+["']@\/lib\/supabase\/server["']/.test(source);
+  if (isServerEntry) {
+    return `import React from "react";
+import { createRoot } from "react-dom/client";
+import App from "./${entry}";
+
+async function renderServerEntry() {
+  const root = createRoot(document.getElementById("root"));
+  const result = App();
+  const element = result && typeof result.then === "function" ? await result : result;
+  root.render(element || React.createElement(React.Fragment));
+}
+
+renderServerEntry().catch((err) => {
+  setTimeout(() => {
+    throw err;
+  }, 0);
+});`;
+  }
   return `import React from "react";
 import { createRoot } from "react-dom/client";
 import App from "./${entry}";
@@ -97,6 +120,67 @@ function createReactDomShim(): string {
   return `const ReactDOM = window.ReactDOM;
 export const createRoot = ReactDOM.createRoot.bind(ReactDOM);
 export default { createRoot };`;
+}
+
+function isServerOnlyModule(path: string, contents: string): boolean {
+  return (
+    /^\s*["']use server["'];?/m.test(contents) ||
+    /server-only/.test(contents) ||
+    /(^|\/)lib\/supabase\/server\.[jt]s$/.test(path) ||
+    /(^|\/)actions\.[jt]s$/.test(path) ||
+    /from\s+["']next\/(headers|cookies)["']/.test(contents)
+  );
+}
+
+function exportedNames(contents: string): Set<string> {
+  const names = new Set<string>();
+  const re = /export\s+(?:async\s+)?(?:function|const|let|var|class)\s+([A-Za-z_$][A-Za-z0-9_$]*)/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(contents))) names.add(match[1]);
+
+  const listRe = /export\s*\{([^}]*)\}/g;
+  while ((match = listRe.exec(contents))) {
+    for (const part of match[1].split(",")) {
+      const exported = part.trim().split(/\s+as\s+/).pop()?.trim();
+      if (exported && /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(exported)) names.add(exported);
+    }
+  }
+  return names;
+}
+
+function createServerModuleShim(contents: string): string {
+  const names = new Set(["createClient", "signOut", ...exportedNames(contents)]);
+  return `function makeQuery(data) {
+  const result = { data, error: null };
+  const query = {
+    select() { return query; },
+    eq() { return query; },
+    neq() { return query; },
+    in() { return query; },
+    order() { return query; },
+    limit() { return query; },
+    insert() { return query; },
+    update() { return query; },
+    upsert() { return query; },
+    delete() { return query; },
+    maybeSingle: async () => ({ data: null, error: null }),
+    single: async () => ({ data: null, error: null }),
+    then: (resolve, reject) => Promise.resolve(result).then(resolve, reject),
+  };
+  return query;
+}
+const previewUser = { id: "preview-user", email: "preview@example.com" };
+const previewSupabase = {
+  auth: { getUser: async () => ({ data: { user: previewUser }, error: null }) },
+  from: () => makeQuery([]),
+};
+export async function createClient() { return previewSupabase; }
+export async function signOut() {}
+${Array.from(names)
+  .filter((name) => name !== "createClient" && name !== "signOut")
+  .map((name) => `export async function ${name}() { return null; }`)
+  .join("\n")}
+export default async function serverStub() { return null; }`;
 }
 
 function collectExternalNamedImports(files: Map<string, string>): Map<string, Set<string>> {
@@ -231,7 +315,13 @@ async function bundleWithEsbuild(files: ProjectFile[], entry: string): Promise<s
 
             const fromDir = args.resolveDir.replace(/^\/+/, "");
             const resolved = resolveLocalImport(args.path, fromDir, fileMap);
-            if (resolved) return { path: `/${resolved}`, namespace: "drowa-project", resolveDir: `/${dirname(resolved)}` };
+            if (resolved) {
+              const contents = fileMap.get(resolved) ?? "";
+              if (isServerOnlyModule(resolved, contents)) {
+                return { path: `/${resolved}`, namespace: "drowa-server-stub", resolveDir: `/${dirname(resolved)}` };
+              }
+              return { path: `/${resolved}`, namespace: "drowa-project", resolveDir: `/${dirname(resolved)}` };
+            }
             return { path: args.path, namespace: "drowa-external" };
           });
 
@@ -255,6 +345,14 @@ async function bundleWithEsbuild(files: ProjectFile[], entry: string): Promise<s
               loader: path.endsWith(".ts") ? "tsx" : path.endsWith(".js") ? "jsx" : "tsx",
               resolveDir: `/${dirname(path)}`,
               contents: withDefault,
+            };
+          });
+
+          build.onLoad({ filter: /.*/, namespace: "drowa-server-stub" }, (args) => {
+            const path = normalizePath(args.path);
+            return {
+              loader: "js",
+              contents: createServerModuleShim(fileMap.get(path) ?? ""),
             };
           });
 
@@ -314,6 +412,19 @@ function buildSrcDoc(bundle: string): string {
       } catch (err) {
         parent.postMessage({ type: "drowa:error", message: String(err && err.message ? err.message : err), stack: String(err && err.stack ? err.stack : "") }, "*");
       }
+      setTimeout(function () {
+        var root = document.getElementById("root");
+        if (!root) return;
+        var hasContent = root.textContent.trim().length > 0 || root.querySelector("img,svg,canvas,video,input,button,a");
+        if (!hasContent) {
+          var message = "Preview rendered an empty page. This project may need the full Next.js runtime or a different entry file.";
+          parent.postMessage({ type: "drowa:error", message: message, stack: "" }, "*");
+          root.innerHTML =
+            '<div style="height:100%;display:flex;align-items:center;justify-content:center;padding:24px;font:13px ui-monospace,SFMono-Regular,Menlo,monospace;color:#888880;text-align:center">' +
+            '<div><p style="margin:0 0 6px;color:#0f0f0f;font:italic 22px Georgia,serif">Preview could not render this entry</p>' +
+            '<p style="margin:0">Open Files or pull from GitHub to load the full project entry.</p></div></div>';
+        }
+      }, 1600);
     </script>
     ${EDITOR_SCRIPT}
   </body>
