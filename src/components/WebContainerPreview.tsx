@@ -33,6 +33,98 @@ function base64ToBytes(base64: string): Uint8Array {
   return bytes;
 }
 
+function isSupabaseServerHelper(file: ProjectFile): boolean {
+  const path = normalizePath(file.path);
+  return (
+    /(^|\/)(lib|utils)\/supabase\/server\.[cm]?[jt]s$/.test(path) ||
+    (/from\s+["']next\/headers["']/.test(file.content) &&
+      /cookies\s*\(/.test(file.content) &&
+      /createServerClient/.test(file.content))
+  );
+}
+
+function supabaseServerPreviewShim(): string {
+  return `const previewUser = { id: "preview-user", email: "preview@example.com" };
+const previewSession = { user: previewUser, access_token: "preview-token" };
+
+function makeQuery(data = []) {
+  const result = { data, error: null, count: Array.isArray(data) ? data.length : null, status: 200, statusText: "OK" };
+  const query = {
+    select() { return query; },
+    insert() { return query; },
+    update() { return query; },
+    upsert() { return query; },
+    delete() { return query; },
+    eq() { return query; },
+    neq() { return query; },
+    gt() { return query; },
+    gte() { return query; },
+    lt() { return query; },
+    lte() { return query; },
+    like() { return query; },
+    ilike() { return query; },
+    is() { return query; },
+    in() { return query; },
+    contains() { return query; },
+    containedBy() { return query; },
+    rangeGt() { return query; },
+    rangeGte() { return query; },
+    rangeLt() { return query; },
+    rangeLte() { return query; },
+    rangeAdjacent() { return query; },
+    overlaps() { return query; },
+    textSearch() { return query; },
+    match() { return query; },
+    not() { return query; },
+    or() { return query; },
+    filter() { return query; },
+    order() { return query; },
+    limit() { return query; },
+    range() { return query; },
+    abortSignal() { return query; },
+    single: async () => ({ ...result, data: Array.isArray(data) ? data[0] ?? null : data }),
+    maybeSingle: async () => ({ ...result, data: Array.isArray(data) ? data[0] ?? null : data }),
+    csv: async () => "",
+    geojson: async () => ({ type: "FeatureCollection", features: [] }),
+    explain: async () => result,
+    rollback() { return query; },
+    returns() { return query; },
+    throwOnError() { return query; },
+    then(resolve, reject) { return Promise.resolve(result).then(resolve, reject); },
+  };
+  return query;
+}
+
+const previewSupabase = {
+  auth: {
+    getUser: async () => ({ data: { user: previewUser }, error: null }),
+    getSession: async () => ({ data: { session: previewSession }, error: null }),
+    signOut: async () => ({ error: null }),
+    onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
+  },
+  from: () => makeQuery([]),
+  rpc: () => makeQuery(null),
+  channel: () => ({ on() { return this; }, subscribe() { return this; }, unsubscribe() {} }),
+  removeChannel: async () => "ok",
+  storage: {
+    from: () => ({
+      getPublicUrl: (path) => ({ data: { publicUrl: path || "" } }),
+      upload: async () => ({ data: null, error: null }),
+      download: async () => ({ data: null, error: null }),
+      remove: async () => ({ data: [], error: null }),
+      list: async () => ({ data: [], error: null }),
+    }),
+  },
+};
+
+export async function createClient() {
+  return previewSupabase;
+}
+
+export const supabase = previewSupabase;
+export default createClient;`;
+}
+
 function readPackage(files: ProjectFile[]): {
   scripts?: Record<string, string>;
   dependencies?: Record<string, string>;
@@ -91,6 +183,7 @@ function toFileTree(files: ProjectFile[]): Record<string, unknown> {
   const root: Record<string, unknown> = {};
   for (const file of ensureRuntimeFiles(files)) {
     if (file.path === "overrides.json") continue;
+    const content = isSupabaseServerHelper(file) ? supabaseServerPreviewShim() : file.content;
     const parts = normalizePath(file.path).split("/");
     let cursor = root;
     for (const part of parts.slice(0, -1)) {
@@ -98,9 +191,9 @@ function toFileTree(files: ProjectFile[]): Record<string, unknown> {
       if (!existing?.directory) cursor[part] = { directory: {} };
       cursor = (cursor[part] as { directory: Record<string, unknown> }).directory;
     }
-    const binary = decodeBinaryContent(file.content);
+    const binary = decodeBinaryContent(content);
     cursor[parts[parts.length - 1]] = {
-      file: { contents: binary ? base64ToBytes(binary.base64) : file.content },
+      file: { contents: binary ? base64ToBytes(binary.base64) : content },
     };
   }
   return root;
