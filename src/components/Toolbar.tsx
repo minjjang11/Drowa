@@ -38,10 +38,11 @@ function LangToggle() {
   );
 }
 
-function InviteTool({ projectId }: { projectId: string }) {
+function InviteButton({ projectId }: { projectId: string }) {
   const [role, setRole] = useState<"developer" | "designer">("designer");
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(false);
 
   async function copyLink() {
     setBusy(true);
@@ -63,34 +64,47 @@ function InviteTool({ projectId }: { projectId: string }) {
   }
 
   return (
-    <div className="rounded-[6px] border border-border bg-background p-2">
-      <p className="font-mono text-[10px] uppercase tracking-wider text-muted">Invite</p>
-      <div className="mt-1 flex gap-1 rounded-[5px] border border-border bg-surface p-0.5">
-        {(["developer", "designer"] as const).map((r) => (
-          <button
-            key={r}
-            onClick={() => setRole(r)}
-            className={`flex-1 rounded-[4px] px-2 py-1 font-mono text-[10px] capitalize transition-colors ${
-              role === r ? "bg-accent text-white" : "text-muted hover:text-foreground"
-            }`}
-          >
-            {r}
-          </button>
-        ))}
-      </div>
+    <div className="relative">
       <button
-        onClick={copyLink}
-        disabled={busy}
-        className="mt-2 w-full rounded-[5px] bg-accent px-2 py-1.5 font-mono text-[10px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+        onClick={() => setOpen((v) => !v)}
+        className="glow-hover rounded-[4px] border border-border bg-background px-2.5 py-1 font-mono text-[11px] text-foreground transition-colors hover:border-accent"
       >
-        {copied ? "Copied" : busy ? "..." : "Copy invite link"}
+        Invite
       </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="liquid-glass-strong absolute right-0 top-9 z-50 w-56 rounded-[8px] p-3 shadow-[0_8px_32px_rgba(0,0,0,0.12)]">
+            <p className="serif text-[15px] italic text-foreground">Invite teammate</p>
+            <p className="mt-2 font-mono text-[10px] uppercase tracking-wider text-muted">Role</p>
+            <div className="mt-1 flex gap-1 rounded-[5px] border border-border bg-background p-0.5">
+              {(["developer", "designer"] as const).map((r) => (
+                <button
+                  key={r}
+                  onClick={() => setRole(r)}
+                  className={`flex-1 rounded-[4px] px-2 py-1 font-mono text-[10px] capitalize transition-colors ${
+                    role === r ? "bg-accent text-white" : "text-muted hover:text-foreground"
+                  }`}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={copyLink}
+              disabled={busy}
+              className="mt-3 w-full rounded-[5px] bg-accent px-2 py-1.5 font-mono text-[10px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              {copied ? "Copied" : busy ? "..." : "Copy invite link"}
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
 
 function ToolsMenu({
-  projectId,
   github,
   onSync,
   onPull,
@@ -102,7 +116,6 @@ function ToolsMenu({
   onExport,
   onDeploy,
 }: {
-  projectId: string;
   github: { linked: boolean; dirty: boolean; busy: boolean };
   onSync: () => void;
   onPull: () => void;
@@ -164,8 +177,6 @@ function ToolsMenu({
             <button onClick={onDeploy} className={item}>
               Download site
             </button>
-            <div className="my-1 border-t border-border" />
-            <InviteTool projectId={projectId} />
           </div>
         </>
       )}
@@ -266,19 +277,21 @@ export function Toolbar({
         </div>
         <LangToggle />
         {hasContent && (
-          <ToolsMenu
-            projectId={projectId}
-            github={github}
-            onSync={onSync}
-            onPull={onPull}
-            onSaveVersion={onSaveVersion}
-            onOpenVersions={onOpenVersions}
-            onOpenInspiration={onOpenInspiration}
-            onOpenTemplates={onOpenTemplates}
-            onOpenDesign={onOpenDesign}
-            onExport={onExport}
-            onDeploy={onDeploy}
-          />
+          <>
+            <InviteButton projectId={projectId} />
+            <ToolsMenu
+              github={github}
+              onSync={onSync}
+              onPull={onPull}
+              onSaveVersion={onSaveVersion}
+              onOpenVersions={onOpenVersions}
+              onOpenInspiration={onOpenInspiration}
+              onOpenTemplates={onOpenTemplates}
+              onOpenDesign={onOpenDesign}
+              onExport={onExport}
+              onDeploy={onDeploy}
+            />
+          </>
         )}
       </div>
     </header>
