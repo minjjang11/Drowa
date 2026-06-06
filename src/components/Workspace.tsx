@@ -238,11 +238,11 @@ export function Workspace({
   }, [activePreviewRuntime.mode, activePreviewRuntime.entry, activePreviewSignature]);
   const useFrontendPreview =
     activePreviewRuntime.mode === "webcontainer" &&
-    (initialGithubLinked || previewFallback === "esbuild");
+    previewFallback === "esbuild";
   const visiblePreviewRuntime = useMemo(
     () =>
       useFrontendPreview
-        ? { ...activePreviewRuntime, mode: "esbuild" as const, reason: "GitHub project front-end preview" }
+        ? { ...activePreviewRuntime, mode: "esbuild" as const, reason: "WebContainer fallback preview" }
         : activePreviewRuntime,
     [activePreviewRuntime, useFrontendPreview],
   );
