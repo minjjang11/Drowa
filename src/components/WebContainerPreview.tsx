@@ -81,29 +81,6 @@ function envFiles(previewEnv: string | null | undefined): ProjectFile[] {
   ];
 }
 
-// Next's `next build` statically prerenders pages by default. Imported apps call
-// `cookies()` (e.g. the Supabase server client) during render, which throws
-// "`cookies` was called outside a request scope" at prerender time. Force every
-// App Router page/layout to dynamic so the build renders them per-request instead.
-const NEXT_ROUTE_FILE = /(?:^|\/)app\/(?:.*\/)?(page|layout|route)\.(tsx|ts|jsx|js)$/;
-const DYNAMIC_EXPORT = 'export const dynamic = "force-dynamic";\n';
-
-// A leading "use client" / "use server" directive MUST be the first statement in
-// the module, so the export has to be inserted *after* it, not prepended blindly.
-const DIRECTIVE_PROLOGUE = /^\s*(?:\/\/[^\n]*\n|\/\*[\s\S]*?\*\/\s*)*["'`]use (?:client|server)["'`];?[^\n]*\n?/;
-
-function forceNextDynamic(files: ProjectFile[]): ProjectFile[] {
-  return files.map((file) => {
-    if (!NEXT_ROUTE_FILE.test(file.path)) return file;
-    if (/export\s+const\s+dynamic\b/.test(file.content)) return file;
-    const directive = file.content.match(DIRECTIVE_PROLOGUE);
-    const content = directive
-      ? directive[0] + DYNAMIC_EXPORT + file.content.slice(directive[0].length)
-      : DYNAMIC_EXPORT + file.content;
-    return { ...file, content };
-  });
-}
-
 function ensureRuntimeFiles(files: ProjectFile[], previewEnv: string | null | undefined): ProjectFile[] {
   const normalized = files.map((file) => ({ ...file, path: normalizePath(file.path) }));
   // User-provided env always wins over any committed .env in the repo.
@@ -111,10 +88,7 @@ function ensureRuntimeFiles(files: ProjectFile[], previewEnv: string | null | un
   const envPaths = new Set(env.map((f) => f.path));
   const withoutEnv = normalized.filter((f) => !envPaths.has(f.path));
   const hasPackage = withoutEnv.some((file) => file.path === "package.json");
-  if (hasPackage) {
-    const ready = isNextApp(withoutEnv) ? forceNextDynamic(withoutEnv) : withoutEnv;
-    return [...ready, ...env];
-  }
+  if (hasPackage) return [...withoutEnv, ...env];
 
   const app = withoutEnv.find((file) => file.path === "App.tsx")?.content ?? "export default function App() { return null; }";
   return [
@@ -168,19 +142,20 @@ function isNextApp(files: ProjectFile[]): boolean {
   return /\bnext\b/.test(dev) || /\bnext\b/.test(start) || Boolean(deps.next);
 }
 
-// Next apps run in PRODUCTION mode (build + start) so the preview matches the
-// real deployed site and avoids `next dev`'s prerender-time request-scope errors
-// (e.g. `cookies()` called outside a request scope). Other stacks use the dev server.
-function runPlan(files: ProjectFile[]): { build?: RunCmd; run: RunCmd } {
+// Everything runs through its DEV server (like Bolt/StackBlitz), never a
+// production `next build`. `next build` statically prerenders pages, so any page
+// calling `cookies()`/`headers()` (e.g. the Supabase server client) throws
+// "called outside a request scope" at build time and the whole preview dies.
+// `next dev` renders per-request, so that error can't occur, one broken page
+// doesn't kill the app, and there's no slow wasm-swc optimization pass.
+function runPlan(files: ProjectFile[]): { run: RunCmd } {
   const pkg = readPackage(files);
   if (isNextApp(files)) {
-    const build: RunCmd = pkg?.scripts?.build
-      ? { command: "npm", args: ["run", "build"], label: "npm run build" }
-      : { command: "npx", args: ["next", "build"], label: "next build" };
-    const run: RunCmd = pkg?.scripts?.start
-      ? { command: "npm", args: ["run", "start", "--", "-H", "0.0.0.0"], label: "npm run start" }
-      : { command: "npx", args: ["next", "start", "-H", "0.0.0.0"], label: "next start" };
-    return { build, run };
+    // `-H 0.0.0.0` makes Next bind the WebContainer's exposed interface.
+    const run: RunCmd = pkg?.scripts?.dev
+      ? { command: "npm", args: ["run", "dev", "--", "-H", "0.0.0.0"], label: "npm run dev" }
+      : { command: "npx", args: ["next", "dev", "-H", "0.0.0.0"], label: "next dev" };
+    return { run };
   }
   const run: RunCmd = { command: "npm", args: ["run", "dev", "--", "--host", "0.0.0.0"], label: "npm run dev" };
   return { run };
@@ -245,29 +220,7 @@ export function WebContainerPreview({ files, editMode, previewEnv, onError, onQu
         }
         if (cancelled) return;
 
-        const plan = runPlan(files);
-
-        // Production build step (Next apps) — faithful to the deployed site.
-        if (plan.build) {
-          setStatus("Building for production...");
-          let buildLog = "";
-          const build = await webcontainer.spawn(plan.build.command, plan.build.args);
-          build.output.pipeTo(
-            new WritableStream({
-              write(data) {
-                buildLog = `${buildLog}${data}`.slice(-2400);
-                setLog((prev) => `${prev}${data}`.slice(-2400));
-              },
-            }),
-          );
-          const buildExit = await build.exit;
-          if (buildExit !== 0) {
-            throw new Error(`${plan.build.label} failed inside WebContainer\n${buildLog.trim()}`);
-          }
-          if (cancelled) return;
-        }
-
-        const run = plan.run;
+        const run = runPlan(files).run;
         setStatus(`${run.label}...`);
         webcontainer.on("server-ready", (_port, readyUrl) => {
           if (!cancelled) {
