@@ -81,6 +81,21 @@ function envFiles(previewEnv: string | null | undefined): ProjectFile[] {
   ];
 }
 
+// Next's `next build` statically prerenders pages by default. Imported apps call
+// `cookies()` (e.g. the Supabase server client) during render, which throws
+// "`cookies` was called outside a request scope" at prerender time. Force every
+// App Router page/layout to dynamic so the build renders them per-request instead.
+const NEXT_ROUTE_FILE = /(?:^|\/)app\/(?:.*\/)?(page|layout|route)\.(tsx|ts|jsx|js)$/;
+const DYNAMIC_EXPORT = 'export const dynamic = "force-dynamic";\n';
+
+function forceNextDynamic(files: ProjectFile[]): ProjectFile[] {
+  return files.map((file) => {
+    if (!NEXT_ROUTE_FILE.test(file.path)) return file;
+    if (/export\s+const\s+dynamic\b/.test(file.content)) return file;
+    return { ...file, content: DYNAMIC_EXPORT + file.content };
+  });
+}
+
 function ensureRuntimeFiles(files: ProjectFile[], previewEnv: string | null | undefined): ProjectFile[] {
   const normalized = files.map((file) => ({ ...file, path: normalizePath(file.path) }));
   // User-provided env always wins over any committed .env in the repo.
@@ -88,7 +103,10 @@ function ensureRuntimeFiles(files: ProjectFile[], previewEnv: string | null | un
   const envPaths = new Set(env.map((f) => f.path));
   const withoutEnv = normalized.filter((f) => !envPaths.has(f.path));
   const hasPackage = withoutEnv.some((file) => file.path === "package.json");
-  if (hasPackage) return [...withoutEnv, ...env];
+  if (hasPackage) {
+    const ready = isNextApp(withoutEnv) ? forceNextDynamic(withoutEnv) : withoutEnv;
+    return [...ready, ...env];
+  }
 
   const app = withoutEnv.find((file) => file.path === "App.tsx")?.content ?? "export default function App() { return null; }";
   return [
