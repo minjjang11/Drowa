@@ -88,11 +88,19 @@ function envFiles(previewEnv: string | null | undefined): ProjectFile[] {
 const NEXT_ROUTE_FILE = /(?:^|\/)app\/(?:.*\/)?(page|layout|route)\.(tsx|ts|jsx|js)$/;
 const DYNAMIC_EXPORT = 'export const dynamic = "force-dynamic";\n';
 
+// A leading "use client" / "use server" directive MUST be the first statement in
+// the module, so the export has to be inserted *after* it, not prepended blindly.
+const DIRECTIVE_PROLOGUE = /^\s*(?:\/\/[^\n]*\n|\/\*[\s\S]*?\*\/\s*)*["'`]use (?:client|server)["'`];?[^\n]*\n?/;
+
 function forceNextDynamic(files: ProjectFile[]): ProjectFile[] {
   return files.map((file) => {
     if (!NEXT_ROUTE_FILE.test(file.path)) return file;
     if (/export\s+const\s+dynamic\b/.test(file.content)) return file;
-    return { ...file, content: DYNAMIC_EXPORT + file.content };
+    const directive = file.content.match(DIRECTIVE_PROLOGUE);
+    const content = directive
+      ? directive[0] + DYNAMIC_EXPORT + file.content.slice(directive[0].length)
+      : DYNAMIC_EXPORT + file.content;
+    return { ...file, content };
   });
 }
 
