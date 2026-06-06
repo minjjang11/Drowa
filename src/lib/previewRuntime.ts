@@ -14,6 +14,12 @@ export interface PreviewRuntimeDecision {
 const SIMPLE_ENTRY_CANDIDATES = [
   "App.tsx",
   "App.jsx",
+  "src/app/page.tsx",
+  "src/app/page.jsx",
+  "app/page.tsx",
+  "app/page.jsx",
+  "pages/index.tsx",
+  "pages/index.jsx",
   "src/App.tsx",
   "src/App.jsx",
   "src/main.tsx",

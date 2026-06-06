@@ -73,6 +73,14 @@ function syncDesignSection(md: string, tokens: DesignTokens): string {
 }
 
 const OVERRIDES_PATH = "overrides.json";
+const CODE_VIEW_RE = /\.(tsx|jsx|ts|js|css|json|md|html)$/;
+
+type PreviewErrorSource = "iframe" | "esbuild" | "webcontainer";
+type PreviewErrorState = {
+  message: string;
+  stack?: string;
+  source?: PreviewErrorSource;
+};
 
 const DEVICE_WIDTH: Record<DeviceMode, string> = {
   desktop: "100%",
@@ -181,7 +189,8 @@ export function Workspace({
   const [designPrefill, setDesignPrefill] = useState<{ text: string; n: number }>({ text: "", n: 0 });
   const [devPrefill, setDevPrefill] = useState<{ text: string; n: number }>({ text: "", n: 0 });
   const [customActions, setCustomActions] = useState<QuickAction[]>([]);
-  const [previewError, setPreviewError] = useState<{ message: string; stack?: string } | null>(null);
+  const [previewError, setPreviewError] = useState<PreviewErrorState | null>(null);
+  const [previewFallback, setPreviewFallback] = useState<"esbuild" | null>(null);
   // P1 auto-fix: proposed fix awaiting the user's diff approval + attempt counter.
   const [pendingFix, setPendingFix] = useState<{ proposed: string; reply: string } | null>(null);
   const fixAttempts = useRef(0);
@@ -207,6 +216,26 @@ export function Workspace({
     () => decidePreviewRuntime(activePreviewFiles),
     [activePreviewFiles],
   );
+  const activePreviewSignature = useMemo(
+    () => JSON.stringify(activePreviewFiles.map((file) => [file.path, file.content])),
+    [activePreviewFiles],
+  );
+  const defaultViewFile = useMemo(() => {
+    if (code.trim()) return null;
+    const normalize = (path: string) => path.replace(/\\/g, "/").replace(/^\/+/, "");
+    const entry = normalize(activePreviewRuntime.entry);
+    return (
+      projectFiles.find((file) => normalize(file.path) === entry && file.path !== OVERRIDES_PATH) ??
+      projectFiles.find((file) => file.path !== OVERRIDES_PATH && CODE_VIEW_RE.test(file.path)) ??
+      null
+    );
+  }, [activePreviewRuntime.entry, code, projectFiles]);
+  const visibleCodeFile = viewFile ?? defaultViewFile;
+
+  useEffect(() => {
+    setPreviewFallback(null);
+    setPreviewError(null);
+  }, [activePreviewRuntime.mode, activePreviewRuntime.entry, activePreviewSignature]);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tokenSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -815,11 +844,28 @@ export function Workspace({
   }
 
   // A render error surfaced from inside the preview iframe.
-  const handlePreviewError = useCallback((err: { message: string; stack?: string }) => {
+  const handlePreviewError = useCallback((err: PreviewErrorState) => {
     if (!err.message) return;
     setPreviewError(err);
     setStatus("error");
   }, []);
+
+  const handleWebContainerError = useCallback((err: { message: string; stack?: string }) => {
+    if (!err.message) return;
+    setPreviewFallback("esbuild");
+    setPreviewError({ ...err, source: "webcontainer" });
+    setStatus("ready");
+  }, []);
+
+  const handleEsbuildError = useCallback(
+    (err: { message: string; stack?: string }) => handlePreviewError({ ...err, source: "esbuild" }),
+    [handlePreviewError],
+  );
+
+  const handleIframeError = useCallback(
+    (err: { message: string; stack?: string }) => handlePreviewError({ ...err, source: "iframe" }),
+    [handlePreviewError],
+  );
 
   // P1 Safe auto-fix: ask the AI for a fix, but PREVIEW it as a diff first —
   // never overwrite the user's work blindly. Stops after 2 failed attempts.
@@ -919,6 +965,8 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
     (busy !== null ||
       status === "generating" ||
       agentActivities.some((agent) => agent.status === "active" || agent.status === "failed" || agent.status === "fallback"));
+  const isRuntimeFallback = previewFallback === "esbuild" && previewError?.source === "webcontainer";
+  const blockingPreviewError = previewError && !isRuntimeFallback ? previewError : null;
 
   const tabBtn = (id: "preview" | "code", label: string) => (
     <button
@@ -988,7 +1036,7 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
                 quickActions={quickActions}
                 onQuickAction={(t) => send("dev_ai", t)}
                 onAddQuickAction={handleAddQuickAction}
-                errorCard={previewError && lastRole === "dev_ai" ? previewError : null}
+                errorCard={blockingPreviewError && lastRole === "dev_ai" ? blockingPreviewError : null}
                 onFix={fixError}
               />
             </div>
@@ -1044,18 +1092,24 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
               {previewError ? (
                 <div className="liquid-glass flex items-center justify-between gap-3 rounded-[8px] px-3 py-2">
                   <div className="min-w-0">
-                    <p className="serif text-[16px] italic text-foreground">Preview needs repair</p>
+                    <p className="serif text-[16px] italic text-foreground">
+                      {isRuntimeFallback ? "Full preview fallback" : "Preview needs repair"}
+                    </p>
                     <p className="truncate font-mono text-[10px] text-muted">
-                      {previewError.message.split("\n")[0].slice(0, 120)}
+                      {isRuntimeFallback
+                        ? "WebContainer could not start, so Drowa is showing a front-end preview."
+                        : previewError.message.split("\n")[0].slice(0, 120)}
                     </p>
                   </div>
-                  <button
-                    onClick={fixError}
-                    disabled={busy !== null}
-                    className="shrink-0 rounded-[5px] bg-accent px-3 py-1.5 font-mono text-[11px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-                  >
-                    Fix automatically
-                  </button>
+                  {!isRuntimeFallback && (
+                    <button
+                      onClick={fixError}
+                      disabled={busy !== null}
+                      className="shrink-0 rounded-[5px] bg-accent px-3 py-1.5 font-mono text-[11px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                    >
+                      Fix automatically
+                    </button>
+                  )}
                 </div>
               ) : busy !== null || status === "generating" ? (
                 <div className="liquid-glass flex items-center gap-2 rounded-[8px] px-3 py-2">
@@ -1109,17 +1163,17 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
             {tab === "preview" ? (
               <div
                 className={`relative mx-auto h-full overflow-hidden rounded-[6px] transition-[max-width] duration-150 ${
-                  previewError ? "border-2 border-error" : "grad-border"
+                  blockingPreviewError ? "border-2 border-error" : "grad-border"
                 }`}
                 style={{ maxWidth: DEVICE_WIDTH[device] }}
               >
-                {activePreviewRuntime.mode === "webcontainer" ? (
+                {activePreviewRuntime.mode === "webcontainer" && previewFallback !== "esbuild" ? (
                   <WebContainerPreview
                     files={activePreviewFiles}
                     editMode={editMode && !previewVersion}
-                    onError={handlePreviewError}
+                    onError={handleWebContainerError}
                   />
-                ) : activePreviewRuntime.mode === "esbuild" ? (
+                ) : activePreviewRuntime.mode === "esbuild" || previewFallback === "esbuild" ? (
                   <EsbuildPreview
                     ref={previewRef}
                     files={activePreviewFiles}
@@ -1128,7 +1182,7 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
                     editMode={editMode && !previewVersion}
                     onSelect={setSelection}
                     onMove={handleMove}
-                    onError={handlePreviewError}
+                    onError={handleEsbuildError}
                   />
                 ) : (
                   <Preview
@@ -1138,13 +1192,13 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
                     editMode={editMode && !previewVersion}
                     onSelect={setSelection}
                     onMove={handleMove}
-                    onError={handlePreviewError}
+                    onError={handleIframeError}
                   />
                 )}
                 <div className="vignette pointer-events-none absolute inset-0 rounded-[6px]" />
 
                 {/* P4 — clean empty state before anything is built. */}
-                {!code.trim() && !previewVersion && (
+                {!hasContent && !previewVersion && (
                   <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-[6px] bg-background text-center">
                     <p className="serif text-2xl italic text-foreground">Nothing here yet</p>
                     <p className="font-mono text-[12px] text-muted">Ask the AI to build something →</p>
@@ -1165,21 +1219,23 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
               </div>
             ) : (
               <div className="flex h-full flex-col overflow-hidden rounded-[6px] border border-border bg-surface">
-                {viewFile && (
+                {visibleCodeFile && (
                   <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
-                    <span className="font-mono text-[11px] text-accent">{viewFile.path}</span>
-                    <button
-                      onClick={() => setViewFile(null)}
-                      className="font-mono text-[10px] text-muted hover:text-foreground"
-                    >
-                      show App.tsx ✕
-                    </button>
+                    <span className="font-mono text-[11px] text-accent">{visibleCodeFile.path}</span>
+                    {viewFile && (
+                      <button
+                        onClick={() => setViewFile(null)}
+                        className="font-mono text-[10px] text-muted hover:text-foreground"
+                      >
+                        show entry
+                      </button>
+                    )}
                   </div>
                 )}
                 <CodePanel
-                  code={viewFile ? viewFile.content : code}
-                  activeLine={viewFile ? undefined : selection?.line}
-                  editable={!viewFile}
+                  code={visibleCodeFile ? visibleCodeFile.content : code}
+                  activeLine={visibleCodeFile ? undefined : selection?.line}
+                  editable={!visibleCodeFile}
                   onChange={handleCodeEdit}
                 />
               </div>
@@ -1212,7 +1268,7 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
                 quickActions={quickActions}
                 onQuickAction={(t) => send("design_ai", t)}
                 onAddQuickAction={handleAddQuickAction}
-                errorCard={previewError && lastRole === "design_ai" ? previewError : null}
+                errorCard={blockingPreviewError && lastRole === "design_ai" ? blockingPreviewError : null}
                 onFix={fixError}
               />
             </div>

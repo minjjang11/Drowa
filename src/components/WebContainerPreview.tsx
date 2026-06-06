@@ -138,16 +138,26 @@ export function WebContainerPreview({ files, editMode, onError }: WebContainerPr
         if (cancelled) return;
 
         setStatus("Installing dependencies...");
-        const install = await webcontainer.spawn("npm", ["install"]);
+        let installLog = "";
+        const install = await webcontainer.spawn("npm", [
+          "install",
+          "--legacy-peer-deps",
+          "--no-audit",
+          "--no-fund",
+          "--ignore-scripts",
+        ]);
         install.output.pipeTo(
           new WritableStream({
             write(data) {
+              installLog = `${installLog}${data}`.slice(-2400);
               setLog((prev) => `${prev}${data}`.slice(-2400));
             },
           }),
         );
         const installExit = await install.exit;
-        if (installExit !== 0) throw new Error("npm install failed inside WebContainer");
+        if (installExit !== 0) {
+          throw new Error(`npm install failed inside WebContainer\n${installLog.trim()}`);
+        }
         if (cancelled) return;
 
         const run = devCommand(files);

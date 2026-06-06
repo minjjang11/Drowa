@@ -99,14 +99,81 @@ export const createRoot = ReactDOM.createRoot.bind(ReactDOM);
 export default { createRoot };`;
 }
 
-function createExternalShim(spec: string): string {
-  const exportNames = ["clsx", "cn", "twMerge", "motion", "AnimatePresence", "Button", "Card", "Input"];
+function collectExternalNamedImports(files: Map<string, string>): Map<string, Set<string>> {
+  const imports = new Map<string, Set<string>>();
+  for (const source of files.values()) {
+    const re = /import\s+(?:type\s+)?([\s\S]*?)\s+from\s+["']([^"']+)["']/g;
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(source))) {
+      const clause = match[1];
+      const spec = match[2];
+      if (spec === "react" || spec === "react-dom/client" || spec.startsWith(".") || spec.startsWith("@/")) continue;
+      const named = /\{([^}]*)\}/.exec(clause);
+      if (!named) continue;
+      const set = imports.get(spec) ?? new Set<string>();
+      for (const part of named[1].split(",")) {
+        const name = part.trim().split(/\s+as\s+/)[0]?.trim();
+        if (name && /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name)) set.add(name);
+      }
+      imports.set(spec, set);
+    }
+  }
+  return imports;
+}
+
+function createExternalShim(spec: string, requestedNames: Set<string> = new Set()): string {
+  if (spec === "next/link") {
+    return `const React = window.React;
+export default function Link(props) {
+  const safe = Object.assign({}, props, { href: String((props && props.href) || "#") });
+  return React.createElement("a", safe, props && props.children);
+}`;
+  }
+
+  if (spec === "next/image") {
+    return `const React = window.React;
+export default function Image(props) {
+  const safe = Object.assign({}, props, { alt: (props && props.alt) || "" });
+  delete safe.fill;
+  delete safe.priority;
+  return React.createElement("img", safe);
+}`;
+  }
+
+  if (spec === "next/navigation") {
+    return `const router = { push() {}, replace() {}, refresh() {}, back() {}, forward() {}, prefetch() {} };
+export function useRouter() { return router; }
+export function usePathname() { return "/"; }
+export function useSearchParams() { return new URLSearchParams(); }
+export function redirect() {}
+export function notFound() {}
+export default router;`;
+  }
+
+  if (spec === "next/font/google" || spec === "next/font/local") {
+    const fontNames = ["Geist", "Geist_Mono", "Inter", "Instrument_Serif", "Roboto", "Poppins", "Lora"];
+    return `function font() { return { className: "", variable: "", style: {} }; }
+${fontNames.map((name) => `export const ${name} = font;`).join("\n")}
+export default font;`;
+  }
+
+  const exportNames = new Set([
+    "clsx",
+    "cn",
+    "twMerge",
+    "motion",
+    "AnimatePresence",
+    "Button",
+    "Card",
+    "Input",
+    ...requestedNames,
+  ]);
   return `const stub = new Proxy(function ${spec.replace(/[^A-Za-z0-9_$]/g, "_")}() { return null; }, {
   get: function () { return stub; },
   apply: function () { return null; }
 });
 export default stub;
-${exportNames.map((name) => `export const ${name} = stub;`).join("\n")}`;
+${Array.from(exportNames).map((name) => `export const ${name} = stub;`).join("\n")}`;
 }
 
 async function loadEsbuild(): Promise<Esbuild> {
@@ -125,6 +192,7 @@ async function loadEsbuild(): Promise<Esbuild> {
 async function bundleWithEsbuild(files: ProjectFile[], entry: string): Promise<string> {
   const esbuild = await loadEsbuild();
   const fileMap = createFileMap(files);
+  const externalNamedImports = collectExternalNamedImports(fileMap);
   const normalizedEntry = normalizePath(entry);
   const virtualEntry = "__drowa_entry.tsx";
 
@@ -203,7 +271,7 @@ async function bundleWithEsbuild(files: ProjectFile[], entry: string): Promise<s
           build.onLoad({ filter: /.*/, namespace: "drowa-empty" }, () => ({ loader: "js", contents: "" }));
           build.onLoad({ filter: /.*/, namespace: "drowa-external" }, (args) => ({
             loader: "js",
-            contents: createExternalShim(args.path),
+            contents: createExternalShim(args.path, externalNamedImports.get(args.path)),
           }));
         },
       },
