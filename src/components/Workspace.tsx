@@ -141,6 +141,10 @@ export function Workspace({
   const router = useRouter();
   const { t } = useI18n();
   const [code, setCode] = useState(initialCode);
+  const hasAppFile = useMemo(
+    () => initialFiles.some((f) => f.path === "App.tsx"),
+    [initialFiles],
+  );
   // Dependency files (everything but the editable App.tsx entry) for bundling.
   const depFiles = useMemo(
     () => initialFiles.filter((f) => f.path !== "App.tsx"),
@@ -152,13 +156,20 @@ export function Workspace({
     const id = setTimeout(() => setDebouncedCode(code), 300);
     return () => clearTimeout(id);
   }, [code]);
-  // The self-contained bundle the iframe renders — inlines local imports.
+  const shouldIncludeEditableApp = hasAppFile || debouncedCode.trim() !== "";
+  // GitHub imports may not have a root App.tsx, so keep their real file graph intact.
   const projectFiles = useMemo(
-    () => [...depFiles, { path: "App.tsx", content: debouncedCode }],
-    [depFiles, debouncedCode],
+    () =>
+      shouldIncludeEditableApp
+        ? [...depFiles, { path: "App.tsx", content: debouncedCode }]
+        : depFiles,
+    [depFiles, shouldIncludeEditableApp, debouncedCode],
+  );
+  const hasContent = useMemo(
+    () => projectFiles.some((f) => f.path !== OVERRIDES_PATH && f.content.trim() !== ""),
+    [projectFiles],
   );
   const previewBundle = useMemo(() => bundleProject(projectFiles), [projectFiles]);
-  const hasContent = code.trim() !== "";
   const [overrides, setOverrides] = useState<Overrides>(initialOverrides);
   const [contextMd, setContextMd] = useState(initialContextMd);
   const [contextUpdatedAt, setContextUpdatedAt] = useState(initialContextUpdatedAt);
