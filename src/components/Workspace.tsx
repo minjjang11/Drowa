@@ -236,6 +236,16 @@ export function Workspace({
     setPreviewFallback(null);
     setPreviewError(null);
   }, [activePreviewRuntime.mode, activePreviewRuntime.entry, activePreviewSignature]);
+  const useFrontendPreview =
+    activePreviewRuntime.mode === "webcontainer" &&
+    (initialGithubLinked || previewFallback === "esbuild");
+  const visiblePreviewRuntime = useMemo(
+    () =>
+      useFrontendPreview
+        ? { ...activePreviewRuntime, mode: "esbuild" as const, reason: "GitHub project front-end preview" }
+        : activePreviewRuntime,
+    [activePreviewRuntime, useFrontendPreview],
+  );
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tokenSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1154,7 +1164,7 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
           {showAgentStrip && (
             <AgentActivityStrip
               agents={agentActivities}
-              runtime={activePreviewRuntime}
+              runtime={visiblePreviewRuntime}
               busy={busy !== null || status === "generating"}
             />
           )}
@@ -1167,13 +1177,13 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
                 }`}
                 style={{ maxWidth: DEVICE_WIDTH[device] }}
               >
-                {activePreviewRuntime.mode === "webcontainer" && previewFallback !== "esbuild" ? (
+                {activePreviewRuntime.mode === "webcontainer" && !useFrontendPreview ? (
                   <WebContainerPreview
                     files={activePreviewFiles}
                     editMode={editMode && !previewVersion}
                     onError={handleWebContainerError}
                   />
-                ) : activePreviewRuntime.mode === "esbuild" || previewFallback === "esbuild" ? (
+                ) : activePreviewRuntime.mode === "esbuild" || useFrontendPreview ? (
                   <EsbuildPreview
                     ref={previewRef}
                     files={activePreviewFiles}
