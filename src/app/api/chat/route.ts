@@ -9,8 +9,13 @@ import { runAgentPipeline } from "@/lib/agentPipeline";
 import type { AgentActivity } from "@/lib/agents";
 import type { AiRole, DesignTokens, FileRow, Message, VersionTrigger } from "@/lib/types";
 
-const PREVIEW_PATH = "App.tsx";
+const DEFAULT_PATH = "App.tsx";
 const RECENT_LIMIT = 6;
+
+// Only Drowa-native page files are editable AI targets (home App.tsx or pages/<slug>.tsx).
+function isEditablePath(path: string): boolean {
+  return path === "App.tsx" || /^pages\/[^/]+\.[jt]sx?$/.test(path);
+}
 
 export async function POST(req: Request) {
   const supabase = await createClient();
@@ -29,6 +34,10 @@ export async function POST(req: Request) {
     trigger?: VersionTrigger;
     /** Preview a result (e.g. auto-fix) without writing anything to the DB. */
     dryRun?: boolean;
+    /** Target page file (multi-page authoring). Defaults to App.tsx (home). */
+    path?: string;
+    /** Routes of all pages, for cross-page link awareness in the prompt. */
+    pages?: string[];
   };
   try {
     body = await req.json();
@@ -40,6 +49,9 @@ export async function POST(req: Request) {
   if (!projectId || !prompt || (role !== "dev_ai" && role !== "design_ai")) {
     return NextResponse.json({ error: "Missing or invalid fields" }, { status: 400 });
   }
+  // Resolve (and sanitize) the target page file.
+  const targetPath = body.path && isEditablePath(body.path) ? body.path : DEFAULT_PATH;
+  const pageRoutes = Array.isArray(body.pages) ? body.pages.filter((r): r is string => typeof r === "string") : [];
 
   // Parse an optional reference image data URL ("data:image/png;base64,...").
   let imagePayload: { mediaType: string; data: string } | null = null;
@@ -56,7 +68,7 @@ export async function POST(req: Request) {
         .from("files")
         .select("*")
         .eq("project_id", projectId)
-        .eq("path", PREVIEW_PATH)
+        .eq("path", targetPath)
         .maybeSingle(),
       supabase.from("design_tokens").select("tokens").eq("project_id", projectId).maybeSingle(),
       supabase
@@ -88,6 +100,8 @@ export async function POST(req: Request) {
     userPrompt: prompt,
     image: imagePayload,
     agentNote: agentPlan.systemNote,
+    pageRoutes,
+    activeRoute: targetPath === "App.tsx" ? "/" : `/${targetPath.replace(/^pages\//, "").replace(/\.[jt]sx?$/, "")}`,
   });
 
   let reply: string;
@@ -218,7 +232,7 @@ export async function POST(req: Request) {
     await supabase
       .from("files")
       .upsert(
-        { project_id: projectId, path: PREVIEW_PATH, content: code },
+        { project_id: projectId, path: targetPath, content: code },
         { onConflict: "project_id,path" },
       );
 

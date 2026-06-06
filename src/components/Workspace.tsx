@@ -14,6 +14,17 @@ import { relativeTime } from "@/lib/versionMeta";
 import { bundleProject } from "@/lib/bundler";
 import { buildStandaloneHtml } from "@/lib/standalone";
 import { decidePreviewRuntime } from "@/lib/previewRuntime";
+import { parsePreviewEnv } from "@/lib/previewEnv";
+import {
+  HOME_PATH,
+  isPageFile,
+  newPageStub,
+  pageLabel,
+  pageMeta,
+  pageRoute,
+  pathForSlug,
+  sortPages,
+} from "@/lib/pages";
 import {
   buildAgentPlan,
   DEFAULT_AGENT_TEAM,
@@ -127,6 +138,7 @@ export function Workspace({
   initialDev,
   initialDesign,
   initialPrompt,
+  initialPreviewEnv,
   myRole,
 }: {
   projectId: string;
@@ -143,19 +155,34 @@ export function Workspace({
   initialDesign: ChatMessage[];
   /** Home "Start from Scratch" seed — fired once at the Developer AI on mount. */
   initialPrompt?: string | null;
+  /** Public-only env injected into the WebContainer preview (projects.preview_env). */
+  initialPreviewEnv?: string | null;
   /** Current user's project role — pre-opens their chat drawer. */
   myRole?: MemberRole;
 }) {
   const router = useRouter();
   const { t } = useI18n();
   const [code, setCode] = useState(initialCode);
+  // ── Multi-page authoring (Drowa-native) ──────────────────────────────
+  // The active page lives in `code`; every OTHER page's content is held here.
+  // Home = App.tsx; extra pages = pages/<slug>.tsx (see lib/pages).
+  const [activePath, setActivePath] = useState<string>(HOME_PATH);
+  const activePathRef = useRef(activePath);
+  activePathRef.current = activePath;
+  const [otherPages, setOtherPages] = useState<Record<string, string>>(() => {
+    const rec: Record<string, string> = {};
+    for (const f of initialFiles) {
+      if (isPageFile(f.path) && f.path !== HOME_PATH) rec[f.path] = f.content;
+    }
+    return rec;
+  });
   const hasAppFile = useMemo(
-    () => initialFiles.some((f) => f.path === "App.tsx"),
+    () => initialFiles.some((f) => f.path === HOME_PATH),
     [initialFiles],
   );
-  // Dependency files (everything but the editable App.tsx entry) for bundling.
+  // Non-page dependency files (libs, components, real imported graph) for bundling.
   const depFiles = useMemo(
-    () => initialFiles.filter((f) => f.path !== "App.tsx"),
+    () => initialFiles.filter((f) => !isPageFile(f.path) && f.path !== OVERRIDES_PATH),
     [initialFiles],
   );
   // Debounce the entry 300ms so the preview doesn't re-bundle on every keystroke.
@@ -164,15 +191,21 @@ export function Workspace({
     const id = setTimeout(() => setDebouncedCode(code), 300);
     return () => clearTimeout(id);
   }, [code]);
-  const shouldIncludeEditableApp = hasAppFile || debouncedCode.trim() !== "";
-  // GitHub imports may not have a root App.tsx, so keep their real file graph intact.
-  const projectFiles = useMemo(
-    () =>
-      shouldIncludeEditableApp
-        ? [...depFiles, { path: "App.tsx", content: debouncedCode }]
-        : depFiles,
-    [depFiles, shouldIncludeEditableApp, debouncedCode],
+  // The page switcher (Drowa-native authoring) lists all known page files home-first.
+  const pages = useMemo(
+    () => sortPages([HOME_PATH, activePath, ...Object.keys(otherPages)].filter(isPageFile)).map(pageMeta),
+    [activePath, otherPages],
   );
+  // Include the active page when it has real content, an App.tsx already existed,
+  // or it's a non-home page file (which always has a real path).
+  const includeActive =
+    hasAppFile || debouncedCode.trim() !== "" || activePath !== HOME_PATH;
+  // GitHub imports may not have a root App.tsx, so keep their real file graph intact.
+  const projectFiles = useMemo(() => {
+    const out = [...depFiles, ...Object.entries(otherPages).map(([path, content]) => ({ path, content }))];
+    if (includeActive) out.push({ path: activePath, content: debouncedCode });
+    return out;
+  }, [depFiles, otherPages, includeActive, activePath, debouncedCode]);
   const hasContent = useMemo(
     () => projectFiles.some((f) => f.path !== OVERRIDES_PATH && f.content.trim() !== ""),
     [projectFiles],
@@ -191,6 +224,9 @@ export function Workspace({
   const [customActions, setCustomActions] = useState<QuickAction[]>([]);
   const [previewError, setPreviewError] = useState<PreviewErrorState | null>(null);
   const [previewFallback, setPreviewFallback] = useState<"esbuild" | null>(null);
+  const [previewEnv, setPreviewEnv] = useState<string>(initialPreviewEnv ?? "");
+  const [previewEnvOpen, setPreviewEnvOpen] = useState(false);
+  const [previewEnvDraft, setPreviewEnvDraft] = useState("");
   // P1 auto-fix: proposed fix awaiting the user's diff approval + attempt counter.
   const [pendingFix, setPendingFix] = useState<{ proposed: string; reply: string } | null>(null);
   const fixAttempts = useRef(0);
@@ -351,11 +387,13 @@ export function Workspace({
         .select("path, content, updated_at")
         .eq("project_id", projectId);
       for (const row of (data as { path: string; content: string; updated_at: string }[] | null) ?? []) {
-        if (row.path === "App.tsx") {
+        if (row.path === activePathRef.current) {
           if (row.updated_at > lastFilesSync.current) {
             lastFilesSync.current = row.updated_at;
             setCode(row.content);
           }
+        } else if (isPageFile(row.path)) {
+          setOtherPages((prev) => ({ ...prev, [row.path]: row.content }));
         } else if (row.path === OVERRIDES_PATH) {
           try {
             setOverrides(JSON.parse(row.content || "{}"));
@@ -373,9 +411,11 @@ export function Workspace({
         { event: "*", schema: "public", table: "files", filter: `project_id=eq.${projectId}` },
         (payload) => {
           const row = payload.new as { path: string; content: string; updated_at?: string };
-          if (row?.path === "App.tsx") {
+          if (row?.path === activePathRef.current) {
             if (row.updated_at) lastFilesSync.current = row.updated_at;
             setCode(row.content);
+          } else if (row?.path && isPageFile(row.path)) {
+            setOtherPages((prev) => ({ ...prev, [row.path]: row.content }));
           } else if (row?.path === OVERRIDES_PATH) {
             try {
               setOverrides(JSON.parse(row.content || "{}"));
@@ -476,10 +516,79 @@ export function Workspace({
     setGhDirty(true);
     const supabase = createClient();
     const { error } = await supabase.from("files").upsert(
-      { project_id: projectId, path: "App.tsx", content: next },
+      { project_id: projectId, path: activePathRef.current, content: next },
       { onConflict: "project_id,path" },
     );
     flashStatus(error ? "error" : "saved");
+  }
+
+  // ── Multi-page authoring: switch / create / delete pages ─────────────
+  async function switchPage(path: string) {
+    if (path === activePath) return;
+    const from = activePath;
+    const current = code;
+    const incoming = otherPages[path] ?? "";
+    setOtherPages((prev) => {
+      const next = { ...prev };
+      delete next[path];
+      next[from] = current;
+      return next;
+    });
+    setActivePath(path);
+    setCode(incoming);
+    lastFilesSync.current = "";
+    setSelection(null);
+    // Flush the outgoing buffer so an in-progress edit survives the switch.
+    const supabase = createClient();
+    await supabase
+      .from("files")
+      .upsert({ project_id: projectId, path: from, content: current }, { onConflict: "project_id,path" });
+  }
+
+  async function createPage(slugRaw: string) {
+    const path = pathForSlug(slugRaw);
+    if (path === HOME_PATH) return;
+    if (path === activePath || otherPages[path] != null) {
+      void switchPage(path);
+      return;
+    }
+    const from = activePath;
+    const current = code;
+    const stub = newPageStub(pageLabel(path));
+    setOtherPages((prev) => ({ ...prev, [from]: current }));
+    setActivePath(path);
+    setCode(stub);
+    lastFilesSync.current = "";
+    setGhDirty(true);
+    const supabase = createClient();
+    await supabase.from("files").upsert(
+      [
+        { project_id: projectId, path: from, content: current },
+        { project_id: projectId, path, content: stub },
+      ],
+      { onConflict: "project_id,path" },
+    );
+    flashStatus("saved");
+  }
+
+  async function deletePage(path: string) {
+    if (path === HOME_PATH) return;
+    const wasActive = path === activePath;
+    setOtherPages((prev) => {
+      const next = { ...prev };
+      delete next[path];
+      return next;
+    });
+    if (wasActive) {
+      setActivePath(HOME_PATH);
+      setCode(otherPages[HOME_PATH] ?? "");
+      lastFilesSync.current = "";
+      setSelection(null);
+    }
+    setGhDirty(true);
+    const supabase = createClient();
+    await supabase.from("files").delete().eq("project_id", projectId).eq("path", path);
+    flashStatus("saved");
   }
 
   // Manual Monaco-style edit in the code panel: debounced autosave + live re-render.
@@ -490,7 +599,7 @@ export function Workspace({
     codeEditTimer.current = setTimeout(async () => {
       const supabase = createClient();
       const { error } = await supabase.from("files").upsert(
-        { project_id: projectId, path: "App.tsx", content: next },
+        { project_id: projectId, path: activePathRef.current, content: next },
         { onConflict: "project_id,path" },
       );
       flashStatus(error ? "error" : "saved");
@@ -524,7 +633,7 @@ export function Workspace({
     setContextUpdatedAt(stamp);
     const [{ error: e1 }, { error: e2 }] = await Promise.all([
       supabase.from("files").upsert(
-        { project_id: projectId, path: "App.tsx", content: next },
+        { project_id: projectId, path: activePathRef.current, content: next },
         { onConflict: "project_id,path" },
       ),
       supabase.from("context_md").update({ content: nextMd }).eq("project_id", projectId),
@@ -684,7 +793,7 @@ export function Workspace({
     setContextUpdatedAt(stamp);
     const [{ error: e1 }, { error: e2 }] = await Promise.all([
       supabase.from("files").upsert(
-        { project_id: projectId, path: "App.tsx", content: next },
+        { project_id: projectId, path: activePathRef.current, content: next },
         { onConflict: "project_id,path" },
       ),
       supabase.from("context_md").update({ content: nextMd }).eq("project_id", projectId),
@@ -781,7 +890,7 @@ export function Workspace({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "App.tsx";
+    a.download = activePath.split("/").pop() || "App.tsx";
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -824,7 +933,7 @@ export function Workspace({
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, role, prompt, image }),
+        body: JSON.stringify({ projectId, role, prompt, image, path: activePathRef.current, pages: pages.map((p) => p.route) }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -860,12 +969,28 @@ export function Workspace({
     setStatus("error");
   }, []);
 
+  // Full-runtime (WebContainer) failures are NOT silently flattened to a misleading
+  // single-page esbuild render. The WebContainer card shows its own Retry; switching to
+  // the no-backend front-end preview is an explicit user choice (handleQuickPreview).
   const handleWebContainerError = useCallback((err: { message: string; stack?: string }) => {
     if (!err.message) return;
-    setPreviewFallback("esbuild");
     setPreviewError({ ...err, source: "webcontainer" });
+    setStatus("error");
+  }, []);
+
+  const handleQuickPreview = useCallback(() => {
+    setPreviewFallback("esbuild");
+    setPreviewError(null);
     setStatus("ready");
   }, []);
+
+  async function savePreviewEnv() {
+    const value = previewEnvDraft;
+    setPreviewEnv(value);
+    setPreviewEnvOpen(false);
+    const supabase = createClient();
+    await supabase.from("projects").update({ preview_env: value }).eq("id", projectId);
+  }
 
   const handleEsbuildError = useCallback(
     (err: { message: string; stack?: string }) => handlePreviewError({ ...err, source: "esbuild" }),
@@ -904,7 +1029,7 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
         method: "POST",
         headers: { "Content-Type": "application/json" },
         // dryRun: get a proposal without touching the DB until the user approves.
-        body: JSON.stringify({ projectId, role, prompt: fixPrompt, trigger: "auto_fix", dryRun: true }),
+        body: JSON.stringify({ projectId, role, prompt: fixPrompt, trigger: "auto_fix", dryRun: true, path: activePathRef.current }),
       });
       const data = await res.json();
       if (Array.isArray(data.agents)) setAgentActivities(data.agents);
@@ -950,7 +1075,7 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
     const supabase = createClient();
     const stamp = new Date().toISOString();
     await supabase.from("files").upsert(
-      { project_id: projectId, path: "App.tsx", content: fix.proposed },
+      { project_id: projectId, path: activePathRef.current, content: fix.proposed },
       { onConflict: "project_id,path" },
     );
     const short = (previewError?.message ?? "").slice(0, 120);
@@ -975,8 +1100,11 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
     (busy !== null ||
       status === "generating" ||
       agentActivities.some((agent) => agent.status === "active" || agent.status === "failed" || agent.status === "fallback"));
-  const isRuntimeFallback = previewFallback === "esbuild" && previewError?.source === "webcontainer";
-  const blockingPreviewError = previewError && !isRuntimeFallback ? previewError : null;
+  const isRuntimeFallback = previewFallback === "esbuild" && activePreviewRuntime.mode === "webcontainer";
+  // WebContainer failures render their own in-component card (with Retry + quick-preview),
+  // so they are never treated as a blocking parent overlay.
+  const blockingPreviewError =
+    previewError && previewError.source !== "webcontainer" ? previewError : null;
 
   const tabBtn = (id: "preview" | "code", label: string) => (
     <button
@@ -1008,6 +1136,17 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
         onSync={syncToGithub}
         onPull={() => pullFromGithub()}
         hasContent={hasContent}
+        onOpenPreviewEnv={() => {
+          setPreviewEnvDraft(previewEnv);
+          setPreviewEnvOpen(true);
+        }}
+        showPreviewEnv={activePreviewRuntime.mode === "webcontainer"}
+        pages={pages}
+        activePath={activePath}
+        onSwitchPage={(p) => void switchPage(p)}
+        onCreatePage={(s) => void createPage(s)}
+        onDeletePage={(p) => void deletePage(p)}
+        showPages={activePreviewRuntime.mode !== "webcontainer"}
       />
 
       {/* Step 1 — empty project: nothing but the prompt. */}
@@ -1181,13 +1320,16 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
                   <WebContainerPreview
                     files={activePreviewFiles}
                     editMode={editMode && !previewVersion}
+                    previewEnv={previewEnv}
                     onError={handleWebContainerError}
+                    onQuickPreview={handleQuickPreview}
                   />
                 ) : activePreviewRuntime.mode === "esbuild" || useFrontendPreview ? (
                   <EsbuildPreview
                     ref={previewRef}
                     files={activePreviewFiles}
                     entry={activePreviewRuntime.entry}
+                    initialRoute={pageRoute(activePath)}
                     overrides={overrides}
                     editMode={editMode && !previewVersion}
                     onSelect={setSelection}
@@ -1359,6 +1501,53 @@ Fix ONLY this error. Change nothing else — keep all existing functionality and
               </button>
               <button
                 onClick={saveVersion}
+                className="btn-grad rounded-[4px] px-3 py-1.5 text-sm font-medium text-foreground"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Preview env keys (WebContainer real-backend preview) */}
+      {previewEnvOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="grad-border w-full max-w-lg rounded-[8px] bg-surface p-5 anim-modal shadow-[0_8px_32px_rgba(0,0,0,0.12)]">
+            <h2 className="serif text-lg italic text-foreground">Preview env keys</h2>
+            <p className="mt-1 font-mono text-[11px] leading-relaxed text-muted">
+              Injected as <code>.env.local</code> so the live preview reaches your real backend.
+              Public keys only (<code>NEXT_PUBLIC_*</code>, <code>VITE_*</code>) — they run in the
+              browser. Never paste service-role or secret keys.
+            </p>
+            <textarea
+              autoFocus
+              value={previewEnvDraft}
+              onChange={(e) => setPreviewEnvDraft(e.target.value)}
+              spellCheck={false}
+              rows={8}
+              placeholder={"NEXT_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co\nNEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGci..."}
+              className="input-dark mt-3 w-full resize-y rounded-[4px] px-2.5 py-2 font-mono text-[11px] leading-relaxed"
+            />
+            {(() => {
+              const { rejected } = parsePreviewEnv(previewEnvDraft);
+              if (rejected.length === 0) return null;
+              return (
+                <p className="mt-2 font-mono text-[11px] leading-relaxed text-error">
+                  Ignored (not browser-safe): {rejected.join(", ")}. These would be exposed to the
+                  client and will not be injected.
+                </p>
+              );
+            })()}
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setPreviewEnvOpen(false)}
+                className="rounded-[4px] px-3 py-1.5 font-mono text-[12px] text-muted hover:text-foreground"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={savePreviewEnv}
                 className="btn-grad rounded-[4px] px-3 py-1.5 text-sm font-medium text-foreground"
               >
                 Save

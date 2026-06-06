@@ -13,6 +13,9 @@ create table if not exists projects (
   updated_at  timestamptz not null default now()
 );
 
+-- Public-only env (NEXT_PUBLIC_*/VITE_*) injected as .env.local into the WebContainer preview.
+alter table projects add column if not exists preview_env text;
+
 -- role: 'developer' | 'designer'
 create table if not exists project_members (
   project_id  uuid not null references projects(id) on delete cascade,

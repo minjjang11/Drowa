@@ -7,6 +7,8 @@ export interface Project {
   owner_id: string;
   created_at: string;
   updated_at: string;
+  /** Public-only env (NEXT_PUBLIC_ / VITE_ keys) injected as .env.local into the WebContainer preview. */
+  preview_env?: string | null;
 }
 
 export interface ProjectMember {

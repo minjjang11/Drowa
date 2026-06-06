@@ -11,6 +11,8 @@ import {
 import { EDITOR_SCRIPT, type PreviewHandle } from "./Preview";
 import type { Overrides, Selection, StyleMap } from "@/lib/types";
 import type { ProjectFile } from "@/lib/previewRuntime";
+import { isPageFile, pageRoute } from "@/lib/pages";
+import { buildRouterEntry, type PreviewPage } from "@/lib/previewRouter";
 
 type Esbuild = typeof import("esbuild-wasm");
 
@@ -20,6 +22,8 @@ let esbuildReady: Promise<void> | null = null;
 interface EsbuildPreviewProps {
   files: ProjectFile[];
   entry: string;
+  /** Drowa multi-page: route to show first (mirrors the active page in the editor). */
+  initialRoute?: string;
   overrides: Overrides;
   editMode: boolean;
   onSelect: (sel: Selection | null) => void;
@@ -273,12 +277,20 @@ async function loadEsbuild(): Promise<Esbuild> {
   return esbuild;
 }
 
-async function bundleWithEsbuild(files: ProjectFile[], entry: string): Promise<string> {
+async function bundleWithEsbuild(files: ProjectFile[], entry: string, initialRoute: string): Promise<string> {
   const esbuild = await loadEsbuild();
   const fileMap = createFileMap(files);
   const externalNamedImports = collectExternalNamedImports(fileMap);
   const normalizedEntry = normalizePath(entry);
   const virtualEntry = "__drowa_entry.tsx";
+
+  // Drowa-native multi-page: when more than one page file exists, mount a client
+  // router over all pages instead of rendering a single entry component.
+  const drowaPages: PreviewPage[] = Array.from(fileMap.keys())
+    .filter((path) => isPageFile(path))
+    .map((path) => ({ path, route: pageRoute(path) }))
+    .sort((a, b) => (a.route === "/" ? -1 : b.route === "/" ? 1 : a.route.localeCompare(b.route)));
+  const multiPage = drowaPages.length > 1;
 
   const result = await esbuild.build({
     entryPoints: [virtualEntry],
@@ -308,6 +320,11 @@ async function bundleWithEsbuild(files: ProjectFile[], entry: string): Promise<s
         setup(build) {
           build.onResolve({ filter: /.*/ }, (args) => {
             if (args.path === virtualEntry) return { path: virtualEntry, namespace: "drowa" };
+            // Multi-page router imports — resolve straight to the project file loader.
+            if (args.path.startsWith("drowa-page:")) {
+              const resolved = normalizePath(args.path.slice("drowa-page:".length));
+              return { path: `/${resolved}`, namespace: "drowa-project", resolveDir: `/${dirname(resolved)}` };
+            }
             if (args.path === "react") return { path: "react", namespace: "drowa-shim" };
             if (args.path === "react-dom/client") return { path: "react-dom/client", namespace: "drowa-shim" };
             if (args.path.endsWith(".css")) return { path: args.path, namespace: "drowa-empty" };
@@ -328,15 +345,16 @@ async function bundleWithEsbuild(files: ProjectFile[], entry: string): Promise<s
           build.onLoad({ filter: /.*/, namespace: "drowa" }, () => ({
             loader: "tsx",
             resolveDir: "/",
-            contents: createEntrySource(normalizedEntry, fileMap),
+            contents: multiPage ? buildRouterEntry(drowaPages, initialRoute) : createEntrySource(normalizedEntry, fileMap),
           }));
 
           build.onLoad({ filter: /.*/, namespace: "drowa-project" }, (args) => {
             const path = normalizePath(args.path);
             const contents = fileMap.get(path);
             if (contents == null) return null;
+            // A bare Drowa page (or the entry) is `function App()` with no export — add one.
             const withDefault =
-              path === normalizedEntry &&
+              (path === normalizedEntry || isPageFile(path)) &&
               !/export\s+default/.test(contents) &&
               /\bfunction\s+App\b|\bconst\s+App\b/.test(contents)
                 ? `${contents}\nexport default App;`
@@ -408,6 +426,11 @@ function buildSrcDoc(bundle: string): string {
         parent.postMessage({ type: "drowa:error", message: String(r.message || r), stack: String(r.stack || "") }, "*");
       });
       try {
+        // Bare Drowa pages use hooks globally (no imports) — expose them like the iframe runtime.
+        var React = window.React, ReactDOM = window.ReactDOM;
+        var useState = React.useState, useEffect = React.useEffect, useRef = React.useRef,
+            useMemo = React.useMemo, useCallback = React.useCallback, useReducer = React.useReducer,
+            useContext = React.useContext, Fragment = React.Fragment;
         ${bundle}
       } catch (err) {
         parent.postMessage({ type: "drowa:error", message: String(err && err.message ? err.message : err), stack: String(err && err.stack ? err.stack : "") }, "*");
@@ -432,7 +455,7 @@ function buildSrcDoc(bundle: string): string {
 }
 
 export const EsbuildPreview = forwardRef<PreviewHandle, EsbuildPreviewProps>(function EsbuildPreview(
-  { files, entry, overrides, editMode, onSelect, onMove, onError },
+  { files, entry, initialRoute = "/", overrides, editMode, onSelect, onMove, onError },
   ref,
 ) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -444,8 +467,8 @@ export const EsbuildPreview = forwardRef<PreviewHandle, EsbuildPreviewProps>(fun
   editModeRef.current = editMode;
 
   const signature = useMemo(
-    () => JSON.stringify({ entry, files: files.map((file) => [file.path, file.content]) }),
-    [entry, files],
+    () => JSON.stringify({ entry, initialRoute, files: files.map((file) => [file.path, file.content]) }),
+    [entry, initialRoute, files],
   );
 
   function post(msg: Record<string, unknown>) {
@@ -467,7 +490,7 @@ export const EsbuildPreview = forwardRef<PreviewHandle, EsbuildPreviewProps>(fun
   useEffect(() => {
     let cancelled = false;
     setError(null);
-    bundleWithEsbuild(files, entry)
+    bundleWithEsbuild(files, entry, initialRoute)
       .then((bundle) => {
         if (!cancelled) setSrcDoc(buildSrcDoc(bundle));
       })
@@ -481,7 +504,7 @@ export const EsbuildPreview = forwardRef<PreviewHandle, EsbuildPreviewProps>(fun
     return () => {
       cancelled = true;
     };
-  }, [signature, files, entry, onError]);
+  }, [signature, files, entry, initialRoute, onError]);
 
   useEffect(() => {
     post({ type: "drowa:setEditMode", editMode });

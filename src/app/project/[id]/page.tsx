@@ -95,6 +95,7 @@ export default async function ProjectPage({
       initialDev={toChat(all, "dev_ai")}
       initialDesign={toChat(all, "design_ai")}
       initialPrompt={seed}
+      initialPreviewEnv={(project as Project).preview_env ?? null}
       myRole={myRole}
     />
   );

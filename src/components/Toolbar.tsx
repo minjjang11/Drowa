@@ -5,6 +5,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useI18n, type TKey } from "@/lib/i18n";
 import type { DeviceMode, Status } from "@/lib/types";
+import { HOME_PATH, type PageMeta } from "@/lib/pages";
 
 const DEVICES: { id: DeviceMode; label: string }[] = [
   { id: "desktop", label: "Desktop" },
@@ -115,6 +116,8 @@ function ToolsMenu({
   onOpenDesign,
   onExport,
   onDeploy,
+  onOpenPreviewEnv,
+  showPreviewEnv,
 }: {
   github: { linked: boolean; dirty: boolean; busy: boolean };
   onSync: () => void;
@@ -126,6 +129,8 @@ function ToolsMenu({
   onOpenDesign: () => void;
   onExport: () => void;
   onDeploy: () => void;
+  onOpenPreviewEnv: () => void;
+  showPreviewEnv: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const item =
@@ -177,6 +182,94 @@ function ToolsMenu({
             <button onClick={onDeploy} className={item}>
               Download site
             </button>
+            {showPreviewEnv && (
+              <>
+                <div className="my-1 border-t border-border" />
+                <button onClick={onOpenPreviewEnv} className={item}>
+                  Preview env keys
+                </button>
+              </>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function PageSwitcher({
+  pages,
+  activePath,
+  onSwitchPage,
+  onCreatePage,
+  onDeletePage,
+}: {
+  pages: PageMeta[];
+  activePath: string;
+  onSwitchPage: (path: string) => void;
+  onCreatePage: (slug: string) => void;
+  onDeletePage: (path: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const active = pages.find((p) => p.path === activePath) ?? pages[0];
+  const item =
+    "flex w-full items-center justify-between gap-2 rounded-[4px] px-2.5 py-1.5 text-left font-mono text-[11px] transition-colors hover:bg-highlight";
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="glow-hover flex items-center gap-1.5 rounded-[5px] border border-border bg-background px-2.5 py-1 font-mono text-[11px] text-foreground transition-colors hover:border-accent"
+        title="Pages"
+      >
+        <span className="text-muted">⌹</span>
+        {active?.label ?? "Home"}
+        <span className="text-muted">▾</span>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="liquid-glass-strong absolute left-0 top-9 z-50 w-52 rounded-[8px] p-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.12)]">
+            {pages.map((p) => (
+              <div key={p.path} className="group flex items-center">
+                <button
+                  onClick={() => {
+                    onSwitchPage(p.path);
+                    setOpen(false);
+                  }}
+                  className={`${item} ${p.path === activePath ? "text-accent" : "text-foreground"}`}
+                >
+                  <span className="truncate">
+                    {p.label}
+                    <span className="ml-1.5 text-muted">{p.route}</span>
+                  </span>
+                  {p.path !== HOME_PATH && (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (confirm(`Delete page ${p.label}?`)) onDeletePage(p.path);
+                      }}
+                      className="hidden text-muted hover:text-error group-hover:inline"
+                    >
+                      ✕
+                    </span>
+                  )}
+                </button>
+              </div>
+            ))}
+            <div className="my-1 border-t border-border" />
+            <button
+              onClick={() => {
+                const slug = prompt("New page slug (e.g. about, pricing):");
+                if (slug && slug.trim()) onCreatePage(slug.trim());
+                setOpen(false);
+              }}
+              className="block w-full rounded-[4px] px-2.5 py-1.5 text-left font-mono text-[11px] text-accent transition-colors hover:bg-highlight"
+            >
+              + New page
+            </button>
           </div>
         </>
       )}
@@ -201,6 +294,14 @@ export function Toolbar({
   onSync,
   onPull,
   hasContent,
+  onOpenPreviewEnv,
+  showPreviewEnv,
+  pages,
+  activePath,
+  onSwitchPage,
+  onCreatePage,
+  onDeletePage,
+  showPages,
 }: {
   projectId: string;
   projectName: string;
@@ -218,6 +319,14 @@ export function Toolbar({
   onSync: () => void;
   onPull: () => void;
   hasContent: boolean;
+  onOpenPreviewEnv: () => void;
+  showPreviewEnv: boolean;
+  pages: PageMeta[];
+  activePath: string;
+  onSwitchPage: (path: string) => void;
+  onCreatePage: (slug: string) => void;
+  onDeletePage: (path: string) => void;
+  showPages: boolean;
 }) {
   const { t } = useI18n();
   const [name, setName] = useState(projectName);
@@ -253,7 +362,17 @@ export function Toolbar({
         </span>
       </div>
 
-      <div className="flex items-center gap-0.5 rounded-[5px] border border-border bg-background p-0.5">
+      <div className="flex items-center gap-2">
+        {showPages && (
+          <PageSwitcher
+            pages={pages}
+            activePath={activePath}
+            onSwitchPage={onSwitchPage}
+            onCreatePage={onCreatePage}
+            onDeletePage={onDeletePage}
+          />
+        )}
+        <div className="flex items-center gap-0.5 rounded-[5px] border border-border bg-background p-0.5">
         {DEVICES.map((d) => (
           <button
             key={d.id}
@@ -268,6 +387,7 @@ export function Toolbar({
             {d.label}
           </button>
         ))}
+        </div>
       </div>
 
       <div className="flex items-center gap-2">
@@ -290,6 +410,8 @@ export function Toolbar({
               onOpenDesign={onOpenDesign}
               onExport={onExport}
               onDeploy={onDeploy}
+              onOpenPreviewEnv={onOpenPreviewEnv}
+              showPreviewEnv={showPreviewEnv}
             />
           </>
         )}

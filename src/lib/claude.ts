@@ -68,6 +68,10 @@ export interface BuildContextParams {
   image?: { mediaType: string; data: string } | null;
   /** Optional V3 agent-team orchestration note. */
   agentNote?: string | null;
+  /** All page routes in this project (multi-page authoring), e.g. ["/", "/about"]. */
+  pageRoutes?: string[];
+  /** Route of the page currently being edited, e.g. "/" or "/about". */
+  activeRoute?: string;
 }
 
 type Anthropic_MessageParam = Anthropic.MessageParam;
@@ -81,9 +85,19 @@ type Anthropic_MessageParam = Anthropic.MessageParam;
  */
 export function buildRequest(p: BuildContextParams) {
   // System = frozen prompt + design system (cached) then context.md (cached).
+  const multiPage =
+    p.pageRoutes && p.pageRoutes.length > 1
+      ? `MULTI-PAGE PROJECT — this build has multiple pages: ${p.pageRoutes.join(", ")}.
+You are currently editing the page at route ${p.activeRoute ?? "/"}. Edit ONLY this page.
+To link to another page, render an anchor with a data-drowa-link attribute, e.g.
+\`<a data-drowa-link="/about" className="...">About</a>\`. Do NOT use next/link or router APIs.
+Keep each page a self-contained \`function App()\` per the output contract.`
+      : null;
+
   const system: Anthropic.TextBlockParam[] = [
     { type: "text", text: systemPrompt(p.role) },
     { type: "text", text: designSystemPrompt(p.tokens) },
+    ...(multiPage ? [{ type: "text" as const, text: multiPage }] : []),
     ...(p.agentNote ? [{ type: "text" as const, text: p.agentNote }] : []),
     {
       type: "text",

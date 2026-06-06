@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ProjectFile } from "@/lib/previewRuntime";
 import { decodeBinaryContent } from "@/lib/fileContent";
+import { buildEnvFile, parsePreviewEnv } from "@/lib/previewEnv";
 
 type WebContainerLike = {
   mount: (tree: Record<string, unknown>) => Promise<void>;
@@ -19,7 +20,11 @@ let bootPromise: Promise<WebContainerLike> | null = null;
 interface WebContainerPreviewProps {
   files: ProjectFile[];
   editMode: boolean;
+  /** Public-only env (NEXT_PUBLIC_ / VITE_ keys) injected as .env.local so the real backend works. */
+  previewEnv?: string | null;
   onError?: (err: { message: string; stack?: string; line?: number }) => void;
+  /** Explicit opt-in to the no-backend front-end (esbuild) preview after a boot failure. */
+  onQuickPreview?: () => void;
 }
 
 function normalizePath(path: string): string {
@@ -31,98 +36,6 @@ function base64ToBytes(base64: string): Uint8Array {
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
   return bytes;
-}
-
-function isSupabaseServerHelper(file: ProjectFile): boolean {
-  const path = normalizePath(file.path);
-  return (
-    /(^|\/)(lib|utils)\/supabase\/server\.[cm]?[jt]s$/.test(path) ||
-    (/from\s+["']next\/headers["']/.test(file.content) &&
-      /cookies\s*\(/.test(file.content) &&
-      /createServerClient/.test(file.content))
-  );
-}
-
-function supabaseServerPreviewShim(): string {
-  return `const previewUser = { id: "preview-user", email: "preview@example.com" };
-const previewSession = { user: previewUser, access_token: "preview-token" };
-
-function makeQuery(data = []) {
-  const result = { data, error: null, count: Array.isArray(data) ? data.length : null, status: 200, statusText: "OK" };
-  const query = {
-    select() { return query; },
-    insert() { return query; },
-    update() { return query; },
-    upsert() { return query; },
-    delete() { return query; },
-    eq() { return query; },
-    neq() { return query; },
-    gt() { return query; },
-    gte() { return query; },
-    lt() { return query; },
-    lte() { return query; },
-    like() { return query; },
-    ilike() { return query; },
-    is() { return query; },
-    in() { return query; },
-    contains() { return query; },
-    containedBy() { return query; },
-    rangeGt() { return query; },
-    rangeGte() { return query; },
-    rangeLt() { return query; },
-    rangeLte() { return query; },
-    rangeAdjacent() { return query; },
-    overlaps() { return query; },
-    textSearch() { return query; },
-    match() { return query; },
-    not() { return query; },
-    or() { return query; },
-    filter() { return query; },
-    order() { return query; },
-    limit() { return query; },
-    range() { return query; },
-    abortSignal() { return query; },
-    single: async () => ({ ...result, data: Array.isArray(data) ? data[0] ?? null : data }),
-    maybeSingle: async () => ({ ...result, data: Array.isArray(data) ? data[0] ?? null : data }),
-    csv: async () => "",
-    geojson: async () => ({ type: "FeatureCollection", features: [] }),
-    explain: async () => result,
-    rollback() { return query; },
-    returns() { return query; },
-    throwOnError() { return query; },
-    then(resolve, reject) { return Promise.resolve(result).then(resolve, reject); },
-  };
-  return query;
-}
-
-const previewSupabase = {
-  auth: {
-    getUser: async () => ({ data: { user: previewUser }, error: null }),
-    getSession: async () => ({ data: { session: previewSession }, error: null }),
-    signOut: async () => ({ error: null }),
-    onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
-  },
-  from: () => makeQuery([]),
-  rpc: () => makeQuery(null),
-  channel: () => ({ on() { return this; }, subscribe() { return this; }, unsubscribe() {} }),
-  removeChannel: async () => "ok",
-  storage: {
-    from: () => ({
-      getPublicUrl: (path) => ({ data: { publicUrl: path || "" } }),
-      upload: async () => ({ data: null, error: null }),
-      download: async () => ({ data: null, error: null }),
-      remove: async () => ({ data: [], error: null }),
-      list: async () => ({ data: [], error: null }),
-    }),
-  },
-};
-
-export async function createClient() {
-  return previewSupabase;
-}
-
-export const supabase = previewSupabase;
-export default createClient;`;
 }
 
 function readPackage(files: ProjectFile[]): {
@@ -157,12 +70,27 @@ function fallbackPackageJson(): string {
   );
 }
 
-function ensureRuntimeFiles(files: ProjectFile[]): ProjectFile[] {
-  const normalized = files.map((file) => ({ ...file, path: normalizePath(file.path) }));
-  const hasPackage = normalized.some((file) => file.path === "package.json");
-  if (hasPackage) return normalized;
+/** Injects a public-only .env.local (and .env) so the real backend client connects. */
+function envFiles(previewEnv: string | null | undefined): ProjectFile[] {
+  const { safe } = parsePreviewEnv(previewEnv);
+  if (Object.keys(safe).length === 0) return [];
+  const body = buildEnvFile(safe);
+  return [
+    { path: ".env.local", content: body },
+    { path: ".env", content: body },
+  ];
+}
 
-  const app = normalized.find((file) => file.path === "App.tsx")?.content ?? "export default function App() { return null; }";
+function ensureRuntimeFiles(files: ProjectFile[], previewEnv: string | null | undefined): ProjectFile[] {
+  const normalized = files.map((file) => ({ ...file, path: normalizePath(file.path) }));
+  // User-provided env always wins over any committed .env in the repo.
+  const env = envFiles(previewEnv);
+  const envPaths = new Set(env.map((f) => f.path));
+  const withoutEnv = normalized.filter((f) => !envPaths.has(f.path));
+  const hasPackage = withoutEnv.some((file) => file.path === "package.json");
+  if (hasPackage) return [...withoutEnv, ...env];
+
+  const app = withoutEnv.find((file) => file.path === "App.tsx")?.content ?? "export default function App() { return null; }";
   return [
     { path: "package.json", content: fallbackPackageJson() },
     { path: "index.html", content: '<div id="root"></div><script type="module" src="/src/main.tsx"></script>' },
@@ -174,16 +102,17 @@ import App from "../App";
 
 createRoot(document.getElementById("root")!).render(<App />);`,
     },
-    ...normalized.filter((file) => file.path !== "overrides.json"),
+    ...withoutEnv.filter((file) => file.path !== "overrides.json"),
     { path: "App.tsx", content: app },
+    ...env,
   ];
 }
 
-function toFileTree(files: ProjectFile[]): Record<string, unknown> {
+function toFileTree(files: ProjectFile[], previewEnv: string | null | undefined): Record<string, unknown> {
   const root: Record<string, unknown> = {};
-  for (const file of ensureRuntimeFiles(files)) {
+  for (const file of ensureRuntimeFiles(files, previewEnv)) {
     if (file.path === "overrides.json") continue;
-    const content = isSupabaseServerHelper(file) ? supabaseServerPreviewShim() : file.content;
+    const content = file.content;
     const parts = normalizePath(file.path).split("/");
     let cursor = root;
     for (const part of parts.slice(0, -1)) {
@@ -216,13 +145,18 @@ async function bootWebContainer(): Promise<WebContainerLike> {
   return bootPromise;
 }
 
-export function WebContainerPreview({ files, editMode, onError }: WebContainerPreviewProps) {
+export function WebContainerPreview({ files, editMode, previewEnv, onError, onQuickPreview }: WebContainerPreviewProps) {
   const [status, setStatus] = useState("Booting environment...");
   const [url, setUrl] = useState<string | null>(null);
   const [log, setLog] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const processRef = useRef<{ kill?: () => void } | null>(null);
-  const signature = useMemo(() => JSON.stringify(files.map((file) => [file.path, file.content])), [files]);
+  const signature = useMemo(
+    () => JSON.stringify([previewEnv ?? "", files.map((file) => [file.path, file.content])]),
+    [files, previewEnv],
+  );
+  const retry = useCallback(() => setReloadKey((k) => k + 1), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -238,18 +172,17 @@ export function WebContainerPreview({ files, editMode, onError }: WebContainerPr
 
         processRef.current?.kill?.();
         setStatus("Mounting project files...");
-        await webcontainer.mount(toFileTree(files));
+        await webcontainer.mount(toFileTree(files, previewEnv));
         if (cancelled) return;
 
-        setStatus("Installing dependencies...");
+        // Prefer the deterministic `npm ci` when a lockfile is present.
+        const hasLock = files.some((f) => normalizePath(f.path) === "package-lock.json");
+        setStatus(hasLock ? "Installing dependencies (npm ci)..." : "Installing dependencies...");
         let installLog = "";
-        const install = await webcontainer.spawn("npm", [
-          "install",
-          "--legacy-peer-deps",
-          "--no-audit",
-          "--no-fund",
-          "--ignore-scripts",
-        ]);
+        const installArgs = hasLock
+          ? ["ci", "--no-audit", "--no-fund", "--ignore-scripts"]
+          : ["install", "--legacy-peer-deps", "--no-audit", "--no-fund", "--ignore-scripts"];
+        const install = await webcontainer.spawn("npm", installArgs);
         install.output.pipeTo(
           new WritableStream({
             write(data) {
@@ -297,7 +230,8 @@ export function WebContainerPreview({ files, editMode, onError }: WebContainerPr
       processRef.current?.kill?.();
       processRef.current = null;
     };
-  }, [signature, files, onError]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signature, reloadKey, onError]);
 
   if (url) {
     return (
@@ -328,6 +262,26 @@ export function WebContainerPreview({ files, editMode, onError }: WebContainerPr
           </pre>
         )}
         {error && <p className="mt-3 font-mono text-[11px] text-error">{error}</p>}
+        {error && (
+          <div className="mt-3 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={retry}
+              className="btn-primary rounded-[6px] px-3 py-1.5 text-[12px] text-white"
+            >
+              Retry
+            </button>
+            {onQuickPreview && (
+              <button
+                type="button"
+                onClick={onQuickPreview}
+                className="btn-ghost rounded-[6px] px-3 py-1.5 text-[12px]"
+              >
+                Quick preview (no backend)
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
