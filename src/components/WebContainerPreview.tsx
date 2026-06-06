@@ -128,14 +128,36 @@ function toFileTree(files: ProjectFile[], previewEnv: string | null | undefined)
   return root;
 }
 
-function devCommand(files: ProjectFile[]): { command: string; args: string[]; label: string } {
+interface RunCmd {
+  command: string;
+  args: string[];
+  label: string;
+}
+
+function isNextApp(files: ProjectFile[]): boolean {
   const pkg = readPackage(files);
-  const dev = pkg?.scripts?.dev;
-  if (!dev) return { command: "npm", args: ["run", "dev", "--", "--host", "0.0.0.0"], label: "npm run dev" };
-  if (/\bnext\s+dev\b/.test(dev)) {
-    return { command: "npm", args: ["run", "dev", "--", "--hostname", "0.0.0.0"], label: "npm run dev" };
+  const dev = pkg?.scripts?.dev ?? "";
+  const start = pkg?.scripts?.start ?? "";
+  const deps = { ...(pkg?.dependencies ?? {}), ...(pkg?.devDependencies ?? {}) };
+  return /\bnext\b/.test(dev) || /\bnext\b/.test(start) || Boolean(deps.next);
+}
+
+// Next apps run in PRODUCTION mode (build + start) so the preview matches the
+// real deployed site and avoids `next dev`'s prerender-time request-scope errors
+// (e.g. `cookies()` called outside a request scope). Other stacks use the dev server.
+function runPlan(files: ProjectFile[]): { build?: RunCmd; run: RunCmd } {
+  const pkg = readPackage(files);
+  if (isNextApp(files)) {
+    const build: RunCmd = pkg?.scripts?.build
+      ? { command: "npm", args: ["run", "build"], label: "npm run build" }
+      : { command: "npx", args: ["next", "build"], label: "next build" };
+    const run: RunCmd = pkg?.scripts?.start
+      ? { command: "npm", args: ["run", "start", "--", "-H", "0.0.0.0"], label: "npm run start" }
+      : { command: "npx", args: ["next", "start", "-H", "0.0.0.0"], label: "next start" };
+    return { build, run };
   }
-  return { command: "npm", args: ["run", "dev", "--", "--host", "0.0.0.0"], label: "npm run dev" };
+  const run: RunCmd = { command: "npm", args: ["run", "dev", "--", "--host", "0.0.0.0"], label: "npm run dev" };
+  return { run };
 }
 
 async function bootWebContainer(): Promise<WebContainerLike> {
@@ -197,7 +219,29 @@ export function WebContainerPreview({ files, editMode, previewEnv, onError, onQu
         }
         if (cancelled) return;
 
-        const run = devCommand(files);
+        const plan = runPlan(files);
+
+        // Production build step (Next apps) — faithful to the deployed site.
+        if (plan.build) {
+          setStatus("Building for production...");
+          let buildLog = "";
+          const build = await webcontainer.spawn(plan.build.command, plan.build.args);
+          build.output.pipeTo(
+            new WritableStream({
+              write(data) {
+                buildLog = `${buildLog}${data}`.slice(-2400);
+                setLog((prev) => `${prev}${data}`.slice(-2400));
+              },
+            }),
+          );
+          const buildExit = await build.exit;
+          if (buildExit !== 0) {
+            throw new Error(`${plan.build.label} failed inside WebContainer\n${buildLog.trim()}`);
+          }
+          if (cancelled) return;
+        }
+
+        const run = plan.run;
         setStatus(`${run.label}...`);
         webcontainer.on("server-ready", (_port, readyUrl) => {
           if (!cancelled) {
